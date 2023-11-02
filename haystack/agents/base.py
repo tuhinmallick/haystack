@@ -93,26 +93,23 @@ class Tool:
         return self._process_result(result)
 
     def _process_result(self, result: Any) -> str:
-        # Base case: string or an empty container
         if not result or isinstance(result, str):
             return str(result)
-        # Recursive case: process the result based on its type and return the result
+        if isinstance(result, (tuple, list)):
+            return self._process_result(result[0] if result else [])
+        elif isinstance(result, dict):
+            if self.output_variable not in result:
+                raise ValueError(
+                    f"Tool {self.name} returned result {result} but "
+                    f"output variable '{self.output_variable}' not found."
+                )
+            return self._process_result(result[self.output_variable])
+        elif isinstance(result, Answer):
+            return self._process_result(result.answer)
+        elif isinstance(result, Document):
+            return self._process_result(result.content)
         else:
-            if isinstance(result, (tuple, list)):
-                return self._process_result(result[0] if result else [])
-            elif isinstance(result, dict):
-                if self.output_variable not in result:
-                    raise ValueError(
-                        f"Tool {self.name} returned result {result} but "
-                        f"output variable '{self.output_variable}' not found."
-                    )
-                return self._process_result(result[self.output_variable])
-            elif isinstance(result, Answer):
-                return self._process_result(result.answer)
-            elif isinstance(result, Document):
-                return self._process_result(result.content)
-            else:
-                return str(result)
+            return str(result)
 
 
 class ToolsManager:
@@ -184,8 +181,7 @@ class ToolsManager:
         :param llm_response: The PromptNode response.
         :return: A tuple containing the tool name and the tool input.
         """
-        tool_match = re.search(self.tool_pattern, llm_response)
-        if tool_match:
+        if tool_match := re.search(self.tool_pattern, llm_response):
             tool_name = tool_match.group(1)
             tool_input = tool_match.group(2) or tool_match.group(3)
             return tool_name.strip('" []\n').strip(), tool_input.strip('" \n')
@@ -395,13 +391,11 @@ class Agent:
         # check for template parameters mismatch
         self.check_prompt_template(template_params)
 
-        # invoke via prompt node
-        prompt_node_response = self.prompt_node.prompt(
+        return self.prompt_node.prompt(
             prompt_template=self.prompt_template,
             stream_handler=AgentTokenStreamingHandler(self.callback_manager),
             **template_params,
         )
-        return prompt_node_response
 
     def create_agent_step(self, max_steps: Optional[int] = None) -> AgentStep:
         """

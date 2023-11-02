@@ -259,15 +259,13 @@ class BaseDocumentStore(BaseComponent):
         """
         all_labels = self.get_all_labels(index=index, filters=filters, headers=headers)
 
-        aggregated_labels = aggregate_labels(
+        return aggregate_labels(
             labels=all_labels,
             add_closed_domain_filter=not open_domain,
             add_meta_filters=aggregate_by_meta,
             drop_negative_labels=drop_negative_labels,
             drop_no_answers=drop_no_answers,
         )
-
-        return aggregated_labels
 
     @abstractmethod
     def get_document_by_id(
@@ -317,10 +315,7 @@ class BaseDocumentStore(BaseComponent):
                 vec /= norm
 
     def scale_to_unit_interval(self, score: float, similarity: Optional[str]) -> float:
-        if similarity == "cosine":
-            return (score + 1) / 2
-        else:
-            return float(expit(score / 100))
+        return (score + 1) / 2 if similarity == "cosine" else float(expit(score / 100))
 
     @abstractmethod
     def query_by_embedding(
@@ -353,20 +348,18 @@ class BaseDocumentStore(BaseComponent):
                 )
         else:
             filters = [filters] * len(query_embs)
-        results = []
-        for query_emb, filter in zip(query_embs, filters):
-            results.append(
-                self.query_by_embedding(
-                    query_emb=query_emb,
-                    filters=filter,
-                    top_k=top_k,
-                    index=index,
-                    return_embedding=return_embedding,
-                    headers=headers,
-                    scale_score=scale_score,
-                )
+        return [
+            self.query_by_embedding(
+                query_emb=query_emb,
+                filters=filter,
+                top_k=top_k,
+                index=index,
+                return_embedding=return_embedding,
+                headers=headers,
+                scale_score=scale_score,
             )
-        return results
+            for query_emb, filter in zip(query_embs, filters)
+        ]
 
     @abstractmethod
     def get_label_count(self, index: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> int:
@@ -449,7 +442,7 @@ class BaseDocumentStore(BaseComponent):
                 self.write_documents(docs, index=doc_index, headers=headers)
                 self.write_labels(labels, index=label_index, headers=headers)
             else:
-                jsonl_filename = (file_path.parent / (file_path.stem + ".jsonl")).as_posix()
+                jsonl_filename = (file_path.parent / f"{file_path.stem}.jsonl").as_posix()
                 logger.info(
                     "Adding evaluation data batch-wise is not compatible with json-formatted SQuAD files. "
                     "Converting json to jsonl to: %s",
@@ -564,14 +557,13 @@ class BaseDocumentStore(BaseComponent):
         docs = self.get_all_documents(index)
 
         l = [len(d.content) for d in docs]
-        stats = {
+        return {
             "count": len(docs),
             "chars_mean": np.mean(l),
             "chars_max": max(l),
             "chars_min": min(l),
             "chars_median": np.median(l),
         }
-        return stats
 
     @abstractmethod
     def get_documents_by_id(
@@ -640,7 +632,7 @@ class BaseDocumentStore(BaseComponent):
             documents_found = self.get_documents_by_id(ids=[doc.id for doc in documents], index=index, headers=headers)
             ids_exist_in_db: List[str] = [doc.id for doc in documents_found]
 
-            if len(ids_exist_in_db) > 0 and duplicate_documents == "fail":
+            if ids_exist_in_db and duplicate_documents == "fail":
                 raise DuplicateDocumentError(
                     f"Document with ids '{', '.join(ids_exist_in_db)} already exists" f" in index = '{index}'."
                 )
@@ -661,12 +653,11 @@ class BaseDocumentStore(BaseComponent):
         """
         index = index or self.label_index
         new_ids: List[str] = [label.id for label in labels]
-        duplicate_ids: List[str] = []
-
-        for label_id, count in collections.Counter(new_ids).items():
-            if count > 1:
-                duplicate_ids.append(label_id)
-
+        duplicate_ids: List[str] = [
+            label_id
+            for label_id, count in collections.Counter(new_ids).items()
+            if count > 1
+        ]
         for label in self.get_all_labels(index=index, headers=headers):
             if label.id in new_ids:
                 duplicate_ids.append(label.id)

@@ -63,7 +63,7 @@ class LangdetectDocumentLanguageClassifier(BaseDocumentLanguageClassifier):
         :param documents: A list of Documents whose language you want to detect.
         :return: List of Documents, where Document.meta["language"] contains the predicted language.
         """
-        if len(documents) == 0:
+        if not documents:
             raise ValueError(
                 "LangdetectDocumentLanguageClassifier needs at least one document to predict the language."
             )
@@ -89,7 +89,7 @@ class LangdetectDocumentLanguageClassifier(BaseDocumentLanguageClassifier):
         :param documents: A list of lists of Documents to detect language.
         :return: List of lists of Documents, where Document.meta["language"] contains the predicted language
         """
-        if len(documents) == 0 or all(len(docs_list) == 0 for docs_list in documents):
+        if not documents or all(len(docs_list) == 0 for docs_list in documents):
             raise ValueError(
                 "LangdetectDocumentLanguageClassifier needs at least one document to predict the language."
             )

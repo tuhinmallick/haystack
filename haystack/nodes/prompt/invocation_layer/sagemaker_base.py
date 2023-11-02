@@ -86,9 +86,9 @@ class SageMakerBaseInvocationLayer(PromptModelInvocationLayer, ABC):
             cls.check_endpoint_in_service(session, model_name_or_path)
 
             test_payload = cls.get_test_payload()
-            # send test payload to endpoint to see if it's supported
-            supported = cls.check_model_input_format(session, model_name_or_path, test_payload, **kwargs)
-            return supported
+            return cls.check_model_input_format(
+                session, model_name_or_path, test_payload, **kwargs
+            )
         return False
 
     @classmethod

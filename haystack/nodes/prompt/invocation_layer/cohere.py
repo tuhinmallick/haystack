@@ -127,11 +127,12 @@ class CohereInvocationLayer(PromptModelInvocationLayer):
         response = self._post(params, stream=stream)
         if not stream:
             output = json.loads(response.text)
-            generated_texts = [o["text"] for o in output["generations"] if "text" in o]
+            return [o["text"] for o in output["generations"] if "text" in o]
         else:
             handler: TokenStreamingHandler = kwargs_with_defaults.pop("stream_handler", DefaultTokenStreamingHandler())
-            generated_texts = self._process_streaming_response(response=response, stream_handler=handler)
-        return generated_texts
+            return self._process_streaming_response(
+                response=response, stream_handler=handler
+            )
 
     def _process_streaming_response(self, response, stream_handler: TokenStreamingHandler):
         # sseclient doesn't work with Cohere streaming API
@@ -140,8 +141,7 @@ class CohereInvocationLayer(PromptModelInvocationLayer):
         for line in response.iter_lines():
             if line:
                 streaming_item = json.loads(line)
-                text = streaming_item.get("text")
-                if text:
+                if text := streaming_item.get("text"):
                     tokens.append(stream_handler(text))
         return ["".join(tokens)]  # return a list of strings just like non-streaming
 
@@ -218,5 +218,6 @@ class CohereInvocationLayer(PromptModelInvocationLayer):
         return (
             model_name_or_path is not None
             and is_inference_api
-            and any(token == model_name_or_path for token in ["command", "command-light", "base", "base-light"])
+            and model_name_or_path
+            in {"command", "command-light", "base", "base-light"}
         )

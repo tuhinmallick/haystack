@@ -110,8 +110,7 @@ class LanguageModel(nn.Module, ABC):
 
         try:
             for odn in OUTPUT_DIM_NAMES:
-                value = getattr(self.model.config, odn, None)
-                if value:
+                if value := getattr(self.model.config, odn, None):
                     self._output_dims = value
                     return value
         except AttributeError:
@@ -202,9 +201,7 @@ class LanguageModel(nn.Module, ABC):
 
         preds = []
         for vec, sample in zip(vecs, samples):
-            pred = {}
-            pred["context"] = sample.clear_text["text"]
-            pred["vec"] = vec
+            pred = {"context": sample.clear_text["text"], "vec": vec}
             preds.append(pred)
         return preds
 
@@ -222,7 +219,7 @@ class LanguageModel(nn.Module, ABC):
         ignore_mask_3d[:, :, :] = ignore_mask_2d[:, :, np.newaxis]
         if strategy == "reduce_max":
             pooled_vecs = np.ma.array(data=token_vecs, mask=ignore_mask_3d).max(axis=1).data
-        if strategy == "reduce_mean":
+        elif strategy == "reduce_mean":
             pooled_vecs = np.ma.array(data=token_vecs, mask=ignore_mask_3d).mean(axis=1).data
 
         return pooled_vecs
@@ -264,8 +261,12 @@ class HFLanguageModel(LanguageModel):
         """
         super().__init__(model_type=model_type)
 
-        config_class: PretrainedConfig = getattr(transformers, model_type + "Config", None)
-        model_class: PreTrainedModel = getattr(transformers, model_type + "Model", None)
+        config_class: PretrainedConfig = getattr(
+            transformers, f"{model_type}Config", None
+        )
+        model_class: PreTrainedModel = getattr(
+            transformers, f"{model_type}Model", None
+        )
 
         haystack_lm_config = Path(pretrained_model_name_or_path) / "language_model_config.json"
         if os.path.exists(haystack_lm_config):
@@ -568,21 +569,23 @@ class DPREncoder(LanguageModel):
                 model_config=original_model_config, model_class=model_class, model_kwargs=model_kwargs
             )
             original_model_type = capitalize_model_type(original_model_type)
-            language_model_class = get_language_model_class(original_model_type)
-            if not language_model_class:
+            if language_model_class := get_language_model_class(
+                original_model_type
+            ):
+                # Instantiate the class for this model
+                self.model.base_model.bert_model = language_model_class(
+                    pretrained_model_name_or_path=model_name_or_path,
+                    model_type=original_model_type,
+                    use_auth_token=use_auth_token,
+                    **model_kwargs,
+                ).model
+
+            else:
                 raise ValueError(
                     f"The type of model supplied ({model_name_or_path} , "
                     f"({original_model_type}) is not supported by Haystack. "
                     f"Supported model categories are: {', '.join(HUGGINGFACE_TO_HAYSTACK.keys())}"
                 )
-            # Instantiate the class for this model
-            self.model.base_model.bert_model = language_model_class(
-                pretrained_model_name_or_path=model_name_or_path,
-                model_type=original_model_type,
-                use_auth_token=use_auth_token,
-                **model_kwargs,
-            ).model
-
         self.language = self.model.config.language
 
     def _init_model_transformers_style(
@@ -752,7 +755,7 @@ HUGGINGFACE_TO_HAYSTACK: Dict[str, Union[Type[HFLanguageModel], Type[DPREncoder]
 HUGGINGFACE_CAPITALIZE = {
     "xlm-roberta": "XLMRoberta",
     "deberta-v2": "DebertaV2",
-    **{k.lower(): k for k in HUGGINGFACE_TO_HAYSTACK.keys()},
+    **{k.lower(): k for k in HUGGINGFACE_TO_HAYSTACK},
 }
 
 #: Regex to match variants of the HF class name, to enhance our mode type guessing abilities.
@@ -894,7 +897,9 @@ def get_language_model(
         )
 
     logger.info(
-        " * LOADING MODEL: '%s' %s", pretrained_model_name_or_path, "(" + model_type + ")" if model_type else ""
+        " * LOADING MODEL: '%s' %s",
+        pretrained_model_name_or_path,
+        f"({model_type})" if model_type else "",
     )
 
     # Instantiate the class for this model
@@ -966,9 +971,6 @@ def _guess_language(name: str) -> str:
     Looks for clues about the model language in the model name.
     """
     languages = [lang for hint, lang in LANGUAGE_HINTS if hint.lower() in name.lower()]
-    if len(languages) > 0:
-        language = languages[0]
-    else:
-        language = "english"
+    language = languages[0] if languages else "english"
     logger.info("Auto-detected model language: %s", language)
     return language

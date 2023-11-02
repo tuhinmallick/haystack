@@ -147,8 +147,7 @@ class SageMakerHFTextGenerationInvocationLayer(SageMakerBaseInvocationLayer):
 
         stream = kwargs.get("stream", self.stream)
         stream_handler = kwargs.get("stream_handler", self.stream_handler)
-        streaming_requested = stream or stream_handler is not None
-        if streaming_requested:
+        if streaming_requested := stream or stream_handler is not None:
             raise SageMakerConfigurationError("SageMaker model response streaming is not supported yet")
 
         stop_words = kwargs.pop("stop_words", None) or []
@@ -174,8 +173,7 @@ class SageMakerHFTextGenerationInvocationLayer(SageMakerBaseInvocationLayer):
             "typical_p": kwargs_with_defaults.get("typical_p", None),
             "watermark": kwargs_with_defaults.get("watermark", False),
         }
-        generated_texts = self._post(prompt=prompt, params=params)
-        return generated_texts
+        return self._post(prompt=prompt, params=params)
 
     def _post(self, prompt: str, params: Optional[Dict[str, Any]] = None) -> List[str]:
         """
@@ -195,8 +193,7 @@ class SageMakerHFTextGenerationInvocationLayer(SageMakerBaseInvocationLayer):
             )
             response_json = response.get("Body").read().decode("utf-8")
             output = json.loads(response_json)
-            generated_texts = [o["generated_text"] for o in output if "generated_text" in o]
-            return generated_texts
+            return [o["generated_text"] for o in output if "generated_text" in o]
         except requests.HTTPError as err:
             res = err.response
             if res.status_code == 429:  # type: ignore[union-attr]

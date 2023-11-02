@@ -54,9 +54,9 @@ class DiversityRanker(BaseRanker):
 
         :return: A list of top_k documents ranked based on diversity.
         """
-        if query is None or len(query) == 0:
+        if query is None or not query:
             raise ValueError("Query is empty")
-        if documents is None or len(documents) == 0:
+        if documents is None or not documents:
             raise ValueError("No documents to choose from")
 
         top_k = top_k or self.top_k
@@ -86,14 +86,10 @@ class DiversityRanker(BaseRanker):
             query_embedding /= torch.norm(query_embedding, p=2, dim=-1).unsqueeze(-1)
 
         n = len(documents)
-        selected: List[int] = []
-
         # Compute the similarity vector between the query and documents
         query_doc_sim: torch.Tensor = query_embedding @ doc_embeddings.T
 
-        # Start with the document with the highest similarity to the query
-        selected.append(int(torch.argmax(query_doc_sim).item()))
-
+        selected: List[int] = [int(torch.argmax(query_doc_sim).item())]
         selected_sum = doc_embeddings[selected[0]] / n
 
         while len(selected) < n:
@@ -130,7 +126,7 @@ class DiversityRanker(BaseRanker):
 
         :return: A list (or a list of lists) of top_k documents ranked based on diversity.
         """
-        if queries is None or len(queries) == 0:
+        if queries is None or not queries:
             raise ValueError("No queries to choose from")
         if documents is None or len(documents) == 0:
             raise ValueError("No documents to choose from")
@@ -143,11 +139,11 @@ class DiversityRanker(BaseRanker):
             # Docs case 2: list of lists of Documents -> rerank each list of Documents based on corresponding query
             # If queries contains a single query, apply it to each list of Documents
             if len(queries) == 1:
-                queries = queries * len(documents)
+                queries *= len(documents)
             if len(queries) != len(documents):
                 raise ValueError("Number of queries must be equal to number of provided Document lists.")
 
-            results = []
-            for query, cur_docs in zip(queries, documents):
-                results.append(self.predict(query=query, documents=cur_docs, top_k=top_k))  # type: ignore
-            return results
+            return [
+                self.predict(query=query, documents=cur_docs, top_k=top_k)
+                for query, cur_docs in zip(queries, documents)
+            ]

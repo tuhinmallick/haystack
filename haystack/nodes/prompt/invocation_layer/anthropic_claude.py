@@ -44,7 +44,7 @@ class AnthropicClaudeInvocationLayer(PromptModelInvocationLayer):
         see Anthropic's [documentation](https://docs.anthropic.com/claude/reference/complete_post).
         """
         super().__init__(model_name_or_path)
-        if not isinstance(api_key, str) or len(api_key) == 0:
+        if not isinstance(api_key, str) or not api_key:
             raise AnthropicError(
                 f"api_key {api_key} must be a valid Anthropic key. Visit https://console.anthropic.com/account/keys to get one."
             )

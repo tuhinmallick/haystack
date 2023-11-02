@@ -57,7 +57,9 @@ class CustomPythonLoader(PythonLoader):
                 self.include_methods_for_class(base_cls, classes)
 
                 for member in base_cls.members:
-                    if isinstance(member, docspec.Function) and not any(m.name == member.name for m in cls.members):
+                    if isinstance(member, docspec.Function) and all(
+                        m.name != member.name for m in cls.members
+                    ):
                         new_member = copy.deepcopy(member)
                         new_member.parent = cls
                         cls.members.append(new_member)

@@ -9,9 +9,10 @@ from ..conftest import document_store
 
 @pytest.mark.parametrize("name", ["elasticsearch", "faiss", "memory"])
 def test_update_embeddings(name, tmp_path):
-    documents = []
-    for i in range(6):
-        documents.append({"content": f"text_{i}", "id": str(i), "meta_field": f"value_{i}"})
+    documents = [
+        {"content": f"text_{i}", "id": str(i), "meta_field": f"value_{i}"}
+        for i in range(6)
+    ]
     documents.append({"content": "text_0", "id": "6", "meta_field": "value_0"})
 
     with document_store(name, documents, tmp_path) as ds:
@@ -47,9 +48,10 @@ def test_update_embeddings(name, tmp_path):
         }
         ds.write_documents([doc])
 
-        documents = []
-        for i in range(8, 11):
-            documents.append({"content": f"text_{i}", "id": str(i), "meta_field": f"value_{i}"})
+        documents = [
+            {"content": f"text_{i}", "id": str(i), "meta_field": f"value_{i}"}
+            for i in range(8, 11)
+        ]
         ds.write_documents(documents)
 
         doc_before_update = ds.get_all_documents(filters={"meta_field": ["value_7"]})[0]
@@ -79,10 +81,10 @@ def test_update_embeddings(name, tmp_path):
             AssertionError, np.testing.assert_array_equal, embedding_before_update, embedding_after_update
         )
 
-        # test update embeddings for newly added docs
-        documents = []
-        for i in range(12, 15):
-            documents.append({"content": f"text_{i}", "id": str(i), "meta_field": f"value_{i}"})
+        documents = [
+            {"content": f"text_{i}", "id": str(i), "meta_field": f"value_{i}"}
+            for i in range(12, 15)
+        ]
         ds.write_documents(documents)
 
         ds.update_embeddings(retriever, batch_size=3, update_existing_embeddings=False)
@@ -92,27 +94,43 @@ def test_update_embeddings(name, tmp_path):
 def test_update_embeddings_table_text_retriever(tmp_path):
     documents = []
     for i in range(3):
-        documents.append(
-            {"content": f"text_{i}", "id": f"pssg_{i}", "meta_field": f"value_text_{i}", "content_type": "text"}
+        documents.extend(
+            (
+                {
+                    "content": f"text_{i}",
+                    "id": f"pssg_{i}",
+                    "meta_field": f"value_text_{i}",
+                    "content_type": "text",
+                },
+                {
+                    "content": pd.DataFrame(
+                        columns=[f"col_{i}", f"col_{i+1}"],
+                        data=[[f"cell_{i}", f"cell_{i+1}"]],
+                    ),
+                    "id": f"table_{i}",
+                    "meta_field": f"value_table_{i}",
+                    "content_type": "table",
+                },
+            )
         )
-        documents.append(
+    documents.extend(
+        (
             {
-                "content": pd.DataFrame(columns=[f"col_{i}", f"col_{i+1}"], data=[[f"cell_{i}", f"cell_{i+1}"]]),
-                "id": f"table_{i}",
-                "meta_field": f"value_table_{i}",
+                "content": "text_0",
+                "id": "pssg_4",
+                "meta_field": "value_text_0",
+                "content_type": "text",
+            },
+            {
+                "content": pd.DataFrame(
+                    columns=["col_0", "col_1"], data=[["cell_0", "cell_1"]]
+                ),
+                "id": "table_4",
+                "meta_field": "value_table_0",
                 "content_type": "table",
-            }
+            },
         )
-    documents.append({"content": "text_0", "id": "pssg_4", "meta_field": "value_text_0", "content_type": "text"})
-    documents.append(
-        {
-            "content": pd.DataFrame(columns=["col_0", "col_1"], data=[["cell_0", "cell_1"]]),
-            "id": "table_4",
-            "meta_field": "value_table_0",
-            "content_type": "table",
-        }
     )
-
     with document_store("elasticsearch", documents, tmp_path, embedding_dim=512) as ds:
         retriever = TableTextRetriever(
             document_store=document_store,

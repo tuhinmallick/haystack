@@ -32,7 +32,7 @@ def prepare_hosts(host, port):
     """
     if isinstance(host, list):
         if isinstance(port, list):
-            if not len(port) == len(host):
+            if len(port) != len(host):
                 raise ValueError("Length of list `host` must match length of list `port`")
             hosts = [{"host": h, "port": p} for h, p in zip(host, port)]
         else:
@@ -100,7 +100,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
         self.duplicate_documents = duplicate_documents
         self.refresh_type = refresh_type
         self.batch_size = batch_size
-        if similarity in ["cosine", "dot_product", "l2"]:
+        if similarity in {"cosine", "dot_product", "l2"}:
             self.similarity: str = similarity
         else:
             raise DocumentStoreError(
@@ -242,8 +242,9 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
     ) -> Optional[Document]:
         """Fetch a document by specifying its text id string"""
         index = index or self.index
-        documents = self.get_documents_by_id([id], index=index, headers=headers)
-        if documents:
+        if documents := self.get_documents_by_id(
+            [id], index=index, headers=headers
+        ):
             return documents[0]
         else:
             return None
@@ -340,21 +341,22 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
             body["query"]["bool"].update({"filter": LogicalFilterClause.parse(filters).convert_to_elasticsearch()})
         result = self._search(**body, index=index, headers=headers)
 
-        values = []
         current_buckets = result["aggregations"]["metadata_agg"]["buckets"]
         after_key = result["aggregations"]["metadata_agg"].get("after_key", False)
-        for bucket in current_buckets:
-            values.append({"value": bucket["key"][key], "count": bucket["doc_count"]})
-
+        values = [
+            {"value": bucket["key"][key], "count": bucket["doc_count"]}
+            for bucket in current_buckets
+        ]
         # Only 10 results get returned at a time, so apply pagination
         while after_key:
             body["aggs"]["metadata_agg"]["composite"]["after"] = after_key
             result = self._search(**body, index=index, headers=headers)
             current_buckets = result["aggregations"]["metadata_agg"]["buckets"]
             after_key = result["aggregations"]["metadata_agg"].get("after_key", False)
-            for bucket in current_buckets:
-                values.append({"value": bucket["key"][key], "count": bucket["doc_count"]})
-
+            values.extend(
+                {"value": bucket["key"][key], "count": bucket["doc_count"]}
+                for bucket in current_buckets
+            )
         return values
 
     def write_documents(
@@ -476,7 +478,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
 
         label_list: List[Label] = [Label.from_dict(label) if isinstance(label, dict) else label for label in labels]
         duplicate_ids: list = [label.id for label in self._get_duplicate_labels(label_list, index=index)]
-        if len(duplicate_ids) > 0:
+        if duplicate_ids:
             logger.warning(
                 "Duplicate Label IDs: Inserting a Label whose id already exists in this document store."
                 " This will overwrite the old Label. Please make sure Label.id is a unique identifier of"
@@ -548,8 +550,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
             body["query"]["bool"]["filter"] = LogicalFilterClause.parse(filters).convert_to_elasticsearch()
 
         result = self._count(index=index, body=body, headers=headers)
-        count = result["count"]
-        return count
+        return result["count"]
 
     def get_label_count(self, index: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> int:
         """
@@ -575,8 +576,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
             body["query"]["bool"]["filter"] = LogicalFilterClause.parse(filters).convert_to_elasticsearch()
 
         result = self._count(index=index, body=body, headers=headers)
-        count = result["count"]
-        return count
+        return result["count"]
 
     def get_all_documents(
         self,
@@ -625,8 +625,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
         result = self.get_all_documents_generator(
             index=index, filters=filters, return_embedding=return_embedding, batch_size=batch_size, headers=headers
         )
-        documents = list(result)
-        return documents
+        return list(result)
 
     def get_all_documents_generator(
         self,
@@ -689,8 +688,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
             index=index, filters=filters, batch_size=batch_size, headers=headers, excludes=excludes
         )
         for hit in result:
-            document = self._convert_es_hit_to_document(hit)
-            yield document
+            yield self._convert_es_hit_to_document(hit)
 
     def get_all_labels(
         self,
@@ -737,10 +735,14 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
         if excludes:
             body["_source"] = {"excludes": excludes}
 
-        result = self._do_scan(
-            self.client, query=body, index=index, size=batch_size, scroll=self.scroll, headers=headers
+        yield from self._do_scan(
+            self.client,
+            query=body,
+            index=index,
+            size=batch_size,
+            scroll=self.scroll,
+            headers=headers,
         )
-        yield from result
 
     def query(
         self,
@@ -908,8 +910,10 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
 
         result = self._search(index=index, **body, headers=headers)["hits"]["hits"]
 
-        documents = [self._convert_es_hit_to_document(hit, scale_score=scale_score) for hit in result]
-        return documents
+        return [
+            self._convert_es_hit_to_document(hit, scale_score=scale_score)
+            for hit in result
+        ]
 
     def query_batch(
         self,
@@ -1071,12 +1075,10 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
     ) -> Dict[str, Any]:
         # Naive retrieval without BM25, only filtering
         if query is None:
-            body = {"query": {"bool": {"must": {"match_all": {}}}}}  # type: Dict[str, Any]
-            body["size"] = "10000"  # Set to the ES default max_result_window
+            body = {"query": {"bool": {"must": {"match_all": {}}}}, "size": "10000"}
             if filters:
                 body["query"]["bool"]["filter"] = LogicalFilterClause.parse(filters).convert_to_elasticsearch()
 
-        # Retrieval via custom query
         elif custom_query:
             template = Template(custom_query)
             # substitute placeholder for query and filters for the custom_query template string
@@ -1089,7 +1091,6 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
             # add top_k
             body["size"] = str(top_k)
 
-        # Default Retrieval via BM25 using the user query on `self.search_fields`
         else:
             if not isinstance(query, str):
                 logger.warning(
@@ -1119,8 +1120,9 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
             if filters:
                 body["query"]["bool"]["filter"] = LogicalFilterClause.parse(filters).convert_to_elasticsearch()
 
-        excluded_fields = self._get_excluded_fields(return_embedding=self.return_embedding)
-        if excluded_fields:
+        if excluded_fields := self._get_excluded_fields(
+            return_embedding=self.return_embedding
+        ):
             body["_source"] = {"excludes": excluded_fields}
 
         return body
@@ -1131,11 +1133,14 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
         if self.excluded_meta_data:
             excluded_meta_data = deepcopy(self.excluded_meta_data)
 
-            if return_embedding is True and self.embedding_field in excluded_meta_data:
+            if return_embedding and self.embedding_field in excluded_meta_data:
                 excluded_meta_data.remove(self.embedding_field)
-            elif return_embedding is False and self.embedding_field not in excluded_meta_data:
+            elif (
+                not return_embedding
+                and self.embedding_field not in excluded_meta_data
+            ):
                 excluded_meta_data.append(self.embedding_field)
-        elif return_embedding is False:
+        elif not return_embedding:
             excluded_meta_data = [self.embedding_field]
         return excluded_meta_data
 
@@ -1149,8 +1154,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
                 for k, v in hit["_source"].items()
                 if k not in (self.content_field, "content_type", "id_hash_keys", self.embedding_field)
             }
-            name = meta_data.pop(self.name_field, None)
-            if name:
+            if name := meta_data.pop(self.name_field, None):
                 meta_data["name"] = name
 
             if "highlight" in hit:
@@ -1168,8 +1172,7 @@ class SearchEngineDocumentStore(KeywordDocumentStore):
                         score = float(expit(np.asarray(score / 8)))  # scaling probability from TFIDF/BM25
 
             embedding = None
-            embedding_list = hit["_source"].get(self.embedding_field)
-            if embedding_list:
+            if embedding_list := hit["_source"].get(self.embedding_field):
                 embedding = np.asarray(embedding_list, dtype=np.float32)
 
             doc_dict = {

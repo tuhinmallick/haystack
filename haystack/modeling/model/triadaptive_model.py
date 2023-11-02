@@ -227,10 +227,9 @@ class TriAdaptiveModel(nn.Module):
         :return: loss: torch.Tensor that is the per sample loss (len: batch_size)
         """
         all_losses = self.logits_to_loss_per_head(logits, **kwargs)
-        # This aggregates the loss per sample across multiple prediction heads
-        # Default is sum(), but you can configure any fn that takes [Tensor, Tensor ...] and returns [Tensor]
-        loss = self.loss_aggregation_fn(all_losses, global_step=global_step, batch=kwargs)
-        return loss
+        return self.loss_aggregation_fn(
+            all_losses, global_step=global_step, batch=kwargs
+        )
 
     def prepare_labels(self, **kwargs):
         """
@@ -262,26 +261,24 @@ class TriAdaptiveModel(nn.Module):
         if len(self.prediction_heads) > 0:
             for head, lm1_out, lm2_out in zip(self.prediction_heads, self.lm1_output_types, self.lm2_output_types):
                 # Choose relevant vectors from LM as output and perform dropout
-                if pooled_output[0] is not None:
-                    if lm1_out == "per_sequence" or lm1_out == "per_sequence_continuous":
-                        output1 = self.dropout1(pooled_output[0])
-                    else:
-                        raise ValueError(
-                            "Unknown extraction strategy from TriAdaptive language_model1: {}".format(lm1_out)
-                        )
-                else:
+                if pooled_output[0] is None:
                     output1 = None
 
-                if pooled_output[1] is not None:
-                    if lm2_out == "per_sequence" or lm2_out == "per_sequence_continuous":
-                        output2 = self.dropout2(pooled_output[1])
-                    else:
-                        raise ValueError(
-                            "Unknown extraction strategy from TriAdaptive language_model2: {}".format(lm2_out)
-                        )
+                elif lm1_out in ["per_sequence", "per_sequence_continuous"]:
+                    output1 = self.dropout1(pooled_output[0])
                 else:
+                    raise ValueError(
+                        f"Unknown extraction strategy from TriAdaptive language_model1: {lm1_out}"
+                    )
+                if pooled_output[1] is None:
                     output2 = None
 
+                elif lm2_out in ["per_sequence", "per_sequence_continuous"]:
+                    output2 = self.dropout2(pooled_output[1])
+                else:
+                    raise ValueError(
+                        f"Unknown extraction strategy from TriAdaptive language_model2: {lm2_out}"
+                    )
                 embedding1, embedding2 = head(output1, output2)
                 all_logits.append((embedding1, embedding2))
         else:
@@ -299,7 +296,7 @@ class TriAdaptiveModel(nn.Module):
         """
         pooled_output = [None, None]
         # Forward pass for the queries
-        if "query_input_ids" in kwargs.keys():
+        if "query_input_ids" in kwargs:
             pooled_output1, _ = self.language_model1(
                 input_ids=kwargs.get("query_input_ids"),
                 segment_ids=kwargs.get("query_segment_ids"),
@@ -310,7 +307,7 @@ class TriAdaptiveModel(nn.Module):
             pooled_output[0] = pooled_output1
 
         # Forward pass for text passages and tables
-        if "passage_input_ids" in kwargs.keys():
+        if "passage_input_ids" in kwargs:
             table_mask = torch.flatten(kwargs["is_table"]) == 1
 
             # Make input two-dimensional

@@ -16,7 +16,7 @@ try:
         from haystack.nodes.file_converter.pdf import PDFToTextConverter  # type: ignore
 
     fitz_import.check()
-except (ModuleNotFoundError, ImportError):
+except ImportError:
     from haystack.nodes.file_converter.pdf_xpdf import PDFToTextConverter  # type: ignore  # pylint: disable=reimported,ungrouped-imports
 
 from haystack.nodes.file_converter.markdown import MarkdownConverter

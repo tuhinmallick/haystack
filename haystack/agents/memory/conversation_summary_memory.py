@@ -49,11 +49,10 @@ class ConversationSummaryMemory(ConversationMemory):
             - window_size: integer specifying the number of most recent conversation snippets to load.
         :return: A formatted string containing the conversation history with the latest summary.
         """
-        if self.has_unsummarized_snippets():
-            unsummarized = self.load_recent_snippets(window_size=self.unsummarized_snippets())
-            return f"{self.summary}\n{unsummarized}"
-        else:
+        if not self.has_unsummarized_snippets():
             return self.summary
+        unsummarized = self.load_recent_snippets(window_size=self.unsummarized_snippets())
+        return f"{self.summary}\n{unsummarized}"
 
     def load_recent_snippets(self, window_size: int = 1) -> str:
         """

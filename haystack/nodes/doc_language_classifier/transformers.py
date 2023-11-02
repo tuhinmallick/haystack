@@ -127,7 +127,7 @@ class TransformersDocumentLanguageClassifier(BaseDocumentLanguageClassifier):
         :param batch_size: The number of Documents to classify at a time.
         :return: A list of Documents, where Document.meta["language"] contains the predicted language.
         """
-        if len(documents) == 0:
+        if not documents:
             raise ValueError(
                 "TransformersDocumentLanguageClassifier needs at least one document to predict the language."
             )
@@ -156,7 +156,7 @@ class TransformersDocumentLanguageClassifier(BaseDocumentLanguageClassifier):
         :param documents: A list of lists of Documents whose language you want to detect.
         :return: A list of lists of Documents where Document.meta["language"] contains the predicted language.
         """
-        if len(documents) == 0 or all(len(docs_list) == 0 for docs_list in documents):
+        if not documents or all(len(docs_list) == 0 for docs_list in documents):
             raise ValueError(
                 "TransformersDocumentLanguageClassifier needs at least one document to predict the language."
             )

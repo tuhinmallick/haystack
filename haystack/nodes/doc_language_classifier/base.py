@@ -34,7 +34,7 @@ class BaseDocumentLanguageClassifier(BaseComponent):
 
         if languages_to_route is None:
             languages_to_route = DEFAULT_LANGUAGES
-            if route_by_language is True:
+            if route_by_language:
                 logger.info(
                     "The languages_to_route list is not defined. The default list will be used: %s", languages_to_route
                 )

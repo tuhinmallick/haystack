@@ -161,9 +161,7 @@ def send_pipeline_event(  # type: ignore
                 "pipeline.runs": pipeline.runs,
             }
 
-            # Add document store
-            docstore = pipeline.get_document_store()
-            if docstore:
+            if docstore := pipeline.get_document_store():
                 event_properties["pipeline.document_store"] = docstore.__class__.__name__
 
             # Add an entry for each node class and classify the pipeline by its root node
@@ -172,8 +170,9 @@ def send_pipeline_event(  # type: ignore
                 if node_type == "RootNode":
                     event_properties["pipeline.type"] = node
                 else:
-                    event_properties["pipeline.nodes." + node_type] = (
-                        event_properties.get("pipeline.nodes." + node_type, 0) + 1  # type: ignore
+                    event_properties[f"pipeline.nodes.{node_type}"] = (
+                        event_properties.get(f"pipeline.nodes.{node_type}", 0)
+                        + 1
                     )
 
             # Inputs of the run() or run_batch() call
@@ -187,10 +186,7 @@ def send_pipeline_event(  # type: ignore
                 documents_len = [len(documents)]
             else:
                 documents_len = [0]
-            if meta and isinstance(meta, list):
-                meta_len = len(meta)
-            else:
-                meta_len = 1
+            meta_len = len(meta) if meta and isinstance(meta, list) else 1
             event_properties["pipeline.run_parameters.queries"] = len(queries) if queries else bool(query)
             event_properties["pipeline.run_parameters.file_paths"] = len(file_paths or [])
             event_properties["pipeline.run_parameters.labels"] = labels_len

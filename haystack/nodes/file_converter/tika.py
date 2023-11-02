@@ -64,7 +64,7 @@ class TikaXHTMLParser(HTMLParser):
 
     def handle_endtag(self, tag):
         # close page div, or a single page without page div, save page and open a new page
-        if (tag == "div" or tag == "body") and self.ingest:
+        if tag in ["div", "body"] and self.ingest:
             self.ingest = False
             # restore words hyphened to the next line
             self.pages.append(self.page.replace("-\n", ""))

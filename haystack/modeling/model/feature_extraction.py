@@ -97,7 +97,9 @@ class FeatureExtractor:
             logger.debug("⛏️ Selected feature extractor: %s (from %s)", feature_extractor_classname, config_file)
             # Use FastTokenizers as much as possible
             try:
-                feature_extractor_class = getattr(transformers, feature_extractor_classname + "Fast")
+                feature_extractor_class = getattr(
+                    transformers, f"{feature_extractor_classname}Fast"
+                )
                 logger.debug(
                     "Fast version of this tokenizer exists. Loaded class: %s",
                     feature_extractor_class.__class__.__name__,
@@ -157,7 +159,7 @@ def tokenize_batch_question_answering(
     :param indices: indices used during multiprocessing so that IDs assigned to our baskets are unique
     :return: baskets, list containing question and corresponding document information
     """
-    if not len(indices) == len(pre_baskets):
+    if len(indices) != len(pre_baskets):
         raise ValueError("indices and pre_baskets must have the same length")
 
     if not tokenizer.is_fast:
@@ -179,13 +181,14 @@ def tokenize_batch_question_answering(
 
     # Extract relevant data
     tokenids_batch = tokenized_docs_batch["input_ids"]
-    offsets_batch = []
-    for o in tokenized_docs_batch["offset_mapping"]:
-        offsets_batch.append(np.asarray([x[0] for x in o], dtype=np.int32))
-    start_of_words_batch = []
-    for e in tokenized_docs_batch.encodings:
-        start_of_words_batch.append(_get_start_of_word_QA(e.word_ids))
-
+    offsets_batch = [
+        np.asarray([x[0] for x in o], dtype=np.int32)
+        for o in tokenized_docs_batch["offset_mapping"]
+    ]
+    start_of_words_batch = [
+        _get_start_of_word_QA(e.word_ids)
+        for e in tokenized_docs_batch.encodings
+    ]
     for i_doc, d in enumerate(pre_baskets):
         document_text = d["context"]
         # # Tokenize questions one by one
@@ -213,11 +216,11 @@ def tokenize_batch_question_answering(
                 "question_offsets": question_offsets,
                 "question_start_of_word": question_sow,
                 "answers": q["answers"],
+                "document_tokens_strings": tokenized_docs_batch.encodings[
+                    i_doc
+                ].tokens,
+                "question_tokens_strings": tokenized_q.encodings[0].tokens,
             }
-            # TODO add only during debug mode (need to create debug mode)
-            raw["document_tokens_strings"] = tokenized_docs_batch.encodings[i_doc].tokens
-            raw["question_tokens_strings"] = tokenized_q.encodings[0].tokens
-
             baskets.append(SampleBasket(raw=raw, id_internal=internal_id, id_external=external_id, samples=None))
     return baskets
 
@@ -366,13 +369,10 @@ def _words_to_tokens(
         # For the first word of a text: we just call the regular tokenize function.
         # For later words: we need to call it with add_prefix_space=True to get the same results with roberta / gpt2 tokenizer
         # see discussion here. https://github.com/huggingface/transformers/issues/1196
-        if len(tokens) == 0:
-            tokens_word = tokenizer.tokenize(word)
+        if len(tokens) != 0 and type(tokenizer) == RobertaTokenizer:
+            tokens_word = tokenizer.tokenize(word, add_prefix_space=True)
         else:
-            if type(tokenizer) == RobertaTokenizer:
-                tokens_word = tokenizer.tokenize(word, add_prefix_space=True)
-            else:
-                tokens_word = tokenizer.tokenize(word)
+            tokens_word = tokenizer.tokenize(word)
         # Sometimes the tokenizer returns no tokens
         if len(tokens_word) == 0:
             continue

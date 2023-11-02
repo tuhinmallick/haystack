@@ -184,8 +184,7 @@ class SageMakerMetaInvocationLayer(SageMakerBaseInvocationLayer):
 
         stream = kwargs.get("stream", self.stream)
         stream_handler = kwargs.get("stream_handler", self.stream_handler)
-        streaming_requested = stream or stream_handler is not None
-        if streaming_requested:
+        if streaming_requested := stream or stream_handler is not None:
             raise SageMakerConfigurationError("SageMaker model response streaming is not supported yet")
 
         kwargs_with_defaults = self.model_input_kwargs
@@ -204,8 +203,7 @@ class SageMakerMetaInvocationLayer(SageMakerBaseInvocationLayer):
             for param, default in default_params.items()
             if param in kwargs_with_defaults or default is not None
         }
-        generated_texts = self._post(prompt=prompt, params=params)
-        return generated_texts
+        return self._post(prompt=prompt, params=params)
 
     def _post(self, prompt: Any, params: Optional[Dict[str, Any]] = None) -> List[str]:
         """
@@ -229,8 +227,7 @@ class SageMakerMetaInvocationLayer(SageMakerBaseInvocationLayer):
             )
             response_json = response.get("Body").read().decode("utf-8")
             output = json.loads(response_json)
-            generated_texts = [o["generation"] for o in output if "generation" in o]
-            return generated_texts
+            return [o["generation"] for o in output if "generation" in o]
         except requests.HTTPError as err:
             res = err.response
             if res.status_code == 429:  # type: ignore[union-attr]
@@ -268,7 +265,7 @@ class SageMakerMetaInvocationLayer(SageMakerBaseInvocationLayer):
         :param prompt: The chat conversation to be checked.
         :return: True if the chat conversation is in the proper format, False otherwise.
         """
-        if not isinstance(prompt, list) or len(prompt) == 0:
+        if not isinstance(prompt, list) or not prompt:
             return False
 
         return all(

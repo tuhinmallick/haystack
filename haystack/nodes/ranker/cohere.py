@@ -221,7 +221,7 @@ class CohereRanker(BaseRanker):
             # Docs case 2: list of lists of Documents -> rerank each list of Documents based on corresponding query
             # If queries contains a single query, apply it to each list of Documents
             if len(queries) == 1:
-                queries = queries * len(documents)
+                queries *= len(documents)
             if len(queries) != len(documents):
                 raise HaystackError("Number of queries must be equal to number of provided Document lists.")
 

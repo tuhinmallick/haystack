@@ -68,12 +68,11 @@ class WhisperTranscriber(BaseComponent):
             import whisper
 
             self._model = whisper.load_model(model_name_or_path, device=device)
-        else:
-            if api_key is None:
-                raise ValueError(
-                    "Provide a valid api_key for OpenAI API. Alternatively, "
-                    "install OpenAI Whisper (see [Whisper](https://github.com/openai/whisper) for more details)."
-                )
+        elif api_key is None:
+            raise ValueError(
+                "Provide a valid api_key for OpenAI API. Alternatively, "
+                "install OpenAI Whisper (see [Whisper](https://github.com/openai/whisper) for more details)."
+            )
 
     def transcribe(
         self,

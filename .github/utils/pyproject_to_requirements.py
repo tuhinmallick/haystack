@@ -19,8 +19,7 @@ def resolve(target: str, extras: dict, results: set):
         return
 
     for t in extras[target]:
-        m = matcher.match(t)
-        if m:
+        if m := matcher.match(t):
             for i in m.group(1).split(","):
                 resolve(i, extras, results)
         else:

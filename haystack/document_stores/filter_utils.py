@@ -123,10 +123,7 @@ class LogicalFilterClause(ABC):
                     conditions.extend(ComparisonOperation.parse(key, value))
 
         if cls == LogicalFilterClause:
-            if len(conditions) == 1:
-                return conditions[0]
-            else:
-                return AndOperation(conditions)
+            return conditions[0] if len(conditions) == 1 else AndOperation(conditions)
         else:
             return cls(conditions)
 
@@ -161,8 +158,10 @@ class LogicalFilterClause(ABC):
         Merges Elasticsearch range queries that perform on the same metadata field.
         """
 
-        range_conditions = [cond["range"] for cond in filter(lambda condition: "range" in condition, conditions)]
-        if range_conditions:
+        if range_conditions := [
+            cond["range"]
+            for cond in filter(lambda condition: "range" in condition, conditions)
+        ]:
             conditions = [condition for condition in conditions if "range" not in condition]
             range_conditions_dict = nested_defaultdict()
             for condition in range_conditions:
@@ -171,9 +170,10 @@ class LogicalFilterClause(ABC):
                 comparison_value = condition[field_name][operation]
                 range_conditions_dict[field_name][operation] = comparison_value
 
-            for field_name, comparison_operations in range_conditions_dict.items():
-                conditions.append({"range": {field_name: comparison_operations}})
-
+            conditions.extend(
+                {"range": {field_name: comparison_operations}}
+                for field_name, comparison_operations in range_conditions_dict.items()
+            )
         return conditions
 
     @abstractmethod
@@ -280,12 +280,8 @@ class ComparisonOperation(ABC):
             try:
                 value = convert_date_to_rfc3339(value)
                 data_type = "valueDate"
-            # Comparison value is a plain string
             except ValueError:
-                if self.field_name == "content":
-                    data_type = "valueText"
-                else:
-                    data_type = "valueString"
+                data_type = "valueText" if self.field_name == "content" else "valueString"
         elif isinstance(value, int):
             data_type = "valueInt"
         elif isinstance(value, float):
@@ -332,11 +328,7 @@ class NotOperation(LogicalFilterClause):
 
     def convert_to_pinecone(self) -> Dict[str, Union[str, int, float, bool, List[Dict]]]:
         conditions = [condition.invert().convert_to_pinecone() for condition in self.conditions]
-        if len(conditions) > 1:
-            # Conditions in self.conditions are by default combined with AND which becomes OR according to DeMorgan
-            return {"$or": conditions}
-        else:
-            return conditions[0]
+        return {"$or": conditions} if len(conditions) > 1 else conditions[0]
 
     def invert(self) -> Union[LogicalFilterClause, ComparisonOperation]:
         # This method is called when a "$not" operation is embedded in another "$not" operation. Therefore, we don't
@@ -555,7 +547,10 @@ class NinOperation(ComparisonOperation):
 
         # If the document field is a list, check if any of its values are in the comparison value
         if isinstance(fields[self.field_name], list):
-            return not any(field in self.comparison_value for field in fields[self.field_name])
+            return all(
+                field not in self.comparison_value
+                for field in fields[self.field_name]
+            )
 
         return fields[self.field_name] not in self.comparison_value
 

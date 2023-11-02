@@ -175,8 +175,7 @@ class TransformersReader(BaseReader):
 
         answers, _ = self._extract_answers_of_predictions(predictions, all_docs, top_k)
 
-        results = {"query": query, "answers": answers}
-        return results
+        return {"query": query, "answers": answers}
 
     def predict_batch(
         self,
@@ -261,7 +260,7 @@ class TransformersReader(BaseReader):
 
         # Group answers by question in case of list of queries and single doc list
         if single_doc_list and len(queries) > 1:
-            answers_per_query = int(len(results["answers"]) / len(queries))
+            answers_per_query = len(results["answers"]) // len(queries)
             answers = []
             for i in range(0, len(results["answers"]), answers_per_query):
                 answer_group = results["answers"][i : i + answers_per_query]
@@ -277,7 +276,7 @@ class TransformersReader(BaseReader):
         no_ans_gaps = []
         best_overall_score = 0
 
-        if len(predictions) > 0:
+        if predictions:
             cur_doc_id = predictions[0]["doc_id"]
             cur_doc = docs[cur_doc_id]
         no_ans_doc_score = 0
@@ -321,7 +320,7 @@ class TransformersReader(BaseReader):
         if best_doc_score > best_overall_score:
             best_overall_score = best_doc_score
 
-        if len(predictions) > 0:
+        if predictions:
             no_ans_gaps.append(no_ans_doc_score - best_doc_score)
 
         # Calculate the score for predicting "no answer", relative to our best positive answer score
@@ -357,12 +356,10 @@ class TransformersReader(BaseReader):
                     all_docs[doc.id] = doc
                     inputs.append(cur)
 
-        # Docs case 2: list of lists of Documents -> apply each query to corresponding list of Documents, if queries
-        # contains only one query, apply it to each list of Documents
         elif len(documents) > 0 and isinstance(documents[0], list):
             single_doc_list = False
             if len(queries) == 1:
-                queries = queries * len(documents)
+                queries *= len(documents)
             if len(queries) != len(documents):
                 raise HaystackError("Number of queries must be equal to number of provided Document lists.")
             for query, cur_docs in zip(queries, documents):

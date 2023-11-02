@@ -94,14 +94,17 @@ class RouteDocuments(BaseComponent):
         return split_documents
 
     def _get_metadata_values_index(self, metadata_values: Union[List[str], List[List[str]]], value: str) -> int:
-        for idx, item in enumerate(metadata_values):
-            if isinstance(item, list):
-                if value in item:
-                    return idx
-            else:
-                if value == item:
-                    return idx
-        return len(metadata_values)
+        return next(
+            (
+                idx
+                for idx, item in enumerate(metadata_values)
+                if isinstance(item, list)
+                and value in item
+                or not isinstance(item, list)
+                and value == item
+            ),
+            len(metadata_values),
+        )
 
     def _split_by_metadata_values(
         self, metadata_values: Union[List, List[List]], documents: List[Document]
@@ -145,10 +148,9 @@ class RouteDocuments(BaseComponent):
     def run_batch(self, documents: Union[List[Document], List[List[Document]]]) -> Tuple[Dict, str]:  # type: ignore
         if isinstance(documents[0], Document):
             return self.run(documents)  # type: ignore
-        else:
-            split_documents = defaultdict(list)
-            for doc_list in documents:
-                results, _ = self.run(documents=doc_list)  # type: ignore
-                for key in results:
-                    split_documents[key].append(results[key])
-            return split_documents, "split"
+        split_documents = defaultdict(list)
+        for doc_list in documents:
+            results, _ = self.run(documents=doc_list)  # type: ignore
+            for key in results:
+                split_documents[key].append(results[key])
+        return split_documents, "split"

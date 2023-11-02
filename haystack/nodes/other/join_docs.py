@@ -41,11 +41,11 @@ class JoinDocuments(JoinNode):
                               Documents are coming with `score` values. Set to False if any of the Documents come
                               from sources where the `score` is set to `None`, like `TfidfRetriever` on Elasticsearch.
         """
-        assert join_mode in [
+        assert join_mode in {
             "concatenate",
             "merge",
             "reciprocal_rank_fusion",
-        ], f"JoinDocuments node does not support '{join_mode}' join_mode."
+        }, f"JoinDocuments node does not support '{join_mode}' join_mode."
 
         assert not (
             weights is not None and join_mode == "concatenate"
@@ -99,23 +99,18 @@ class JoinDocuments(JoinNode):
         return output, "output_1"
 
     def run_batch_accumulated(self, inputs: List[dict], top_k_join: Optional[int] = None):  # type: ignore
-        # Join single document lists
         if isinstance(inputs[0]["documents"][0], Document):
             return self.run(inputs=inputs, top_k_join=top_k_join)
-        # Join lists of document lists
-        else:
-            output_docs = []
-            incoming_edges = [inp["documents"] for inp in inputs]
-            for idx in range(len(incoming_edges[0])):
-                cur_docs_to_join = []
-                for edge in incoming_edges:
-                    cur_docs_to_join.append({"documents": edge[idx]})
-                cur, _ = self.run(inputs=cur_docs_to_join, top_k_join=top_k_join)
-                output_docs.append(cur["documents"])
+        output_docs = []
+        incoming_edges = [inp["documents"] for inp in inputs]
+        for idx in range(len(incoming_edges[0])):
+            cur_docs_to_join = [{"documents": edge[idx]} for edge in incoming_edges]
+            cur, _ = self.run(inputs=cur_docs_to_join, top_k_join=top_k_join)
+            output_docs.append(cur["documents"])
 
-            output = {"documents": output_docs, "labels": inputs[0].get("labels", None)}
+        output = {"documents": output_docs, "labels": inputs[0].get("labels", None)}
 
-            return output, "output_1"
+        return output, "output_1"
 
     def _concatenate_results(self, results, document_map):
         """
@@ -127,11 +122,9 @@ class JoinDocuments(JoinNode):
         for idx in list_id:
             tmp = []
             for result in results:
-                for doc in result:
-                    if doc.id == idx:
-                        tmp.append(doc)
+                tmp.extend(doc for doc in result if doc.id == idx)
             item_best_score = max(tmp, key=lambda x: x.score)
-            scores_map.update({idx: item_best_score.score})
+            scores_map[idx] = item_best_score.score
         return scores_map
 
     def _calculate_comb_sum(self, results):

@@ -166,5 +166,4 @@ class ImageToTextConverter(BaseConverter):
 
         :param image: input image file
         """
-        text = [pytesseract.image_to_string(image, lang=self.tesseract_langs)]
-        return text
+        return [pytesseract.image_to_string(image, lang=self.tesseract_langs)]

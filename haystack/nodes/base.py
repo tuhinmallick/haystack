@@ -105,10 +105,11 @@ class BaseComponent(ABC):
 
     def get_params(self, return_defaults: bool = False) -> Dict[str, Any]:
         component_signature = dict(inspect.signature(self.__class__).parameters)
-        params: Dict[str, Any] = {}
-        for key, value in self._component_config["params"].items():
-            if value != component_signature[key].default or return_defaults:
-                params[key] = value
+        params: Dict[str, Any] = {
+            key: value
+            for key, value in self._component_config["params"].items()
+            if value != component_signature[key].default or return_defaults
+        }
         if return_defaults:
             for key, param in component_signature.items():
                 if key not in params:
@@ -124,8 +125,7 @@ class BaseComponent(ABC):
                 "Haystack with the proper extras: https://docs.haystack.deepset.ai/docs/installation#custom-installation"
             )
 
-        subclass = cls._subclasses[component_type]
-        return subclass
+        return cls._subclasses[component_type]
 
     @classmethod
     def _calculate_outgoing_edges(cls, component_params: Dict[str, Any]) -> int:
@@ -237,25 +237,22 @@ class BaseComponent(ABC):
             elif key in run_signature_args:  # global params
                 run_params[key] = value
 
-        run_inputs = {}
-        for key, value in arguments.items():
-            if key in run_signature_args:
-                run_inputs[key] = value
-
+        run_inputs = {
+            key: value
+            for key, value in arguments.items()
+            if key in run_signature_args
+        }
         output, stream = run_method(**run_inputs, **run_params)
 
         # Collect debug information
         debug_info = {}
         if getattr(self, "debug", None):
             # Include input
-            debug_info["input"] = {**run_inputs, **run_params}
-            debug_info["input"]["debug"] = self.debug
+            debug_info["input"] = {**run_inputs, **run_params, "debug": self.debug}
             # Include output, exclude _debug to avoid recursion
             filtered_output = {key: value for key, value in output.items() if key != "_debug"}
             debug_info["output"] = filtered_output
-        # Include custom debug info
-        custom_debug = output.get("_debug", {})
-        if custom_debug:
+        if custom_debug := output.get("_debug", {}):
             debug_info["runtime"] = custom_debug
 
         # append _debug information from nodes
@@ -308,11 +305,11 @@ class BaseComponent(ABC):
             elif key in run_signature_args:  # global params
                 run_params[key] = value
 
-        run_inputs = {}
-        for key, value in arguments.items():
-            if key in run_signature_args:
-                run_inputs[key] = value
-
+        run_inputs = {
+            key: value
+            for key, value in arguments.items()
+            if key in run_signature_args
+        }
         try:
             output, stream = await run_method(**run_inputs, **run_params)
         except TypeError:
@@ -322,14 +319,11 @@ class BaseComponent(ABC):
         debug_info = {}
         if getattr(self, "debug", None):
             # Include input
-            debug_info["input"] = {**run_inputs, **run_params}
-            debug_info["input"]["debug"] = self.debug
+            debug_info["input"] = {**run_inputs, **run_params, "debug": self.debug}
             # Include output, exclude _debug to avoid recursion
             filtered_output = {key: value for key, value in output.items() if key != "_debug"}
             debug_info["output"] = filtered_output
-        # Include custom debug info
-        custom_debug = output.get("_debug", {})
-        if custom_debug:
+        if custom_debug := output.get("_debug", {}):
             debug_info["runtime"] = custom_debug
 
         # append _debug information from nodes

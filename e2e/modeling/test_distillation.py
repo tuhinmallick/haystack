@@ -5,11 +5,11 @@ from haystack.modeling.data_handler.processor import UnlabeledTextProcessor
 
 
 def create_checkpoint(model):
-    weights = []
-    for name, weight in model.inferencer.model.named_parameters():
-        if "weight" in name and weight.requires_grad:
-            weights.append(torch.clone(weight))
-    return weights
+    return [
+        torch.clone(weight)
+        for name, weight in model.inferencer.model.named_parameters()
+        if "weight" in name and weight.requires_grad
+    ]
 
 
 def assert_weight_change(weights, new_weights):

@@ -224,9 +224,7 @@ def elasticsearch_index_to_document_store(
             document_store.write_documents(haystack_documents, index=index)
             haystack_documents = []
 
-        # Get content and metadata of current record
-        content = record["_source"].pop(original_content_field, "")
-        if content:
+        if content := record["_source"].pop(original_content_field, ""):
             meta = {}
             if original_name_field is not None and original_name_field in record["_source"]:
                 meta["name"] = record["_source"].pop(original_name_field)

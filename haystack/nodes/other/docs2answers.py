@@ -59,22 +59,24 @@ class Docs2Answers(BaseComponent):
 
     @staticmethod
     def _convert_doc_to_answer(doc: Document) -> Answer:
-        # For FAQ style QA use cases
-        if "answer" in doc.meta:
-            doc.meta["query"] = doc.content  # question from the existing FAQ
-            answer = Answer(
-                answer=doc.meta["answer"],
+        if "answer" not in doc.meta:
+            # Regular docs
+            return Answer(
+                answer="",
                 type="other",
                 score=doc.score,
-                context=doc.meta["answer"],
-                offsets_in_context=[Span(start=0, end=len(doc.meta["answer"]))],
+                context=doc.content,
                 document_ids=[doc.id],
                 meta=doc.meta,
             )
-        else:
-            # Regular docs
-            answer = Answer(
-                answer="", type="other", score=doc.score, context=doc.content, document_ids=[doc.id], meta=doc.meta
-            )
 
-        return answer
+        doc.meta["query"] = doc.content  # question from the existing FAQ
+        return Answer(
+            answer=doc.meta["answer"],
+            type="other",
+            score=doc.score,
+            context=doc.meta["answer"],
+            offsets_in_context=[Span(start=0, end=len(doc.meta["answer"]))],
+            document_ids=[doc.id],
+            meta=doc.meta,
+        )

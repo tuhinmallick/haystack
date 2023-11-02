@@ -213,7 +213,7 @@ class TableReader(BaseReader):
         if top_k is None:
             top_k = self.top_k
 
-        single_doc_list = bool(len(documents) > 0 and isinstance(documents[0], Document))
+        single_doc_list = len(documents) > 0 and isinstance(documents[0], Document)
 
         inputs = _flatten_inputs(queries, documents)
         results: Dict = self.table_encoder.predict_batch(
@@ -222,7 +222,7 @@ class TableReader(BaseReader):
 
         # Group answers by question in case of multiple queries and single doc list
         if single_doc_list and len(queries) > 1:
-            num_docs_per_query = int(len(results["answers"]) / len(queries))
+            num_docs_per_query = len(results["answers"]) // len(queries)
             answers = []
             for i in range(0, len(results["answers"]), num_docs_per_query):
                 answer_group = results["answers"][i : i + num_docs_per_query]
@@ -289,8 +289,7 @@ class _TapasEncoder:
         answers = [ans for ans in answers if ans is not None]
 
         answers = sorted(answers, reverse=True)
-        results = {"query": query, "answers": answers[:top_k]}
-        return results
+        return {"query": query, "answers": answers[:top_k]}
 
     def predict_batch(self, queries: List[str], documents: List[List[Document]], top_k: int):
         results: Dict = {"queries": queries, "answers": []}
@@ -338,12 +337,14 @@ class _TableQuestionAnsweringPipeline(TableQuestionAnsweringPipeline):  # pylint
                 )
                 # _get_mean_cell_probs indexes cells by (col, row). DataFrames are, however, indexed by (row, col).
                 all_cell_probabilities = {(row, col): prob for (col, row), prob in cell_coords_to_prob.items()}
-                answer_cell_probabilities = [all_cell_probabilities[coord] for coord in answer_coordinates[i]]
-                if len(answer_cell_probabilities) == 0:
-                    answer_scores.append(None)
-                else:
+                if answer_cell_probabilities := [
+                    all_cell_probabilities[coord]
+                    for coord in answer_coordinates[i]
+                ]:
                     answer_scores.append(np.mean(answer_cell_probabilities))
 
+                else:
+                    answer_scores.append(None)
         return answer_scores
 
     @staticmethod
@@ -355,7 +356,7 @@ class _TableQuestionAnsweringPipeline(TableQuestionAnsweringPipeline):  # pylint
         if len(answer_cells) == 1:
             return answer_cells[0]
         # Return empty string if model did not select any cell as answer
-        if len(answer_cells) == 0:
+        if not answer_cells:
             return ""
 
         # Parse answer cells in order to aggregate numerical values
@@ -378,9 +379,7 @@ class _TableQuestionAnsweringPipeline(TableQuestionAnsweringPipeline):  # pylint
                 return f"{answer_value}{' ' + unit if unit else ''}"
 
         except ValueError as e:
-            if "unknown aggregator" in str(e):
-                pass
-
+            pass
         # Not all selected answer cells contain a numerical value or answer cells don't share the same unit
         return f"{agg_operator} > {', '.join(answer_cells)}"
 
@@ -389,51 +388,51 @@ class _TableQuestionAnsweringPipeline(TableQuestionAnsweringPipeline):  # pylint
         table = model_outputs["table"]
         string_table = table.astype(str)
         outputs = model_outputs["outputs"]
-        if self.type == "tapas":
-            if self.aggregate:
-                logits, logits_agg = outputs[:2]
-                copy_logits = logits.clone()
-                predictions = self.tokenizer.convert_logits_to_predictions(
-                    inputs, copy_logits, logits_agg, cell_classification_threshold=0.5
-                )
-                answer_coordinates_batch, agg_predictions = predictions
-                aggregators = {i: self.model.config.aggregation_labels[pred] for i, pred in enumerate(agg_predictions)}
-            else:
-                logits = outputs[0]
-                copy_logits = logits.clone()
-                predictions = self.tokenizer.convert_logits_to_predictions(
-                    inputs, copy_logits, cell_classification_threshold=0.5
-                )
-                answer_coordinates_batch = predictions[0]
-                aggregators = {}
-            answer_scores = self._calculate_answer_score(logits, inputs, answer_coordinates_batch)
-            answers = []
-            for index, ans_coordinates_per_table in enumerate(answer_coordinates_batch):
-                if len(ans_coordinates_per_table) > 0:
-                    cells = [string_table.iat[coordinate] for coordinate in ans_coordinates_per_table]
-                    aggregator = aggregators.get(index, "")  # type: ignore
-                    if aggregator == "NONE":
-                        answer_str = ", ".join(cells)
-                    else:
-                        answer_str = self._aggregate_answers(aggregator, cells)
-                    current_score = answer_scores[index]
-                    answer_offsets = _calculate_answer_offsets(ans_coordinates_per_table)
-                    answer = Answer(
-                        answer=answer_str,
-                        type="extractive",
-                        score=current_score,
-                        context=string_table,
-                        offsets_in_document=answer_offsets,
-                        offsets_in_context=answer_offsets,
-                        meta={"aggregation_operator": aggregator, "answer_cells": cells},
-                    )
-                    answers.append(answer)
-                else:
-                    # If there is no answer then we use None to keep track of it.
-                    answers.append(None)
-        else:
+        if self.type != "tapas":
             raise NotImplementedError("Only TAPAS models are supported")
 
+        if self.aggregate:
+            logits, logits_agg = outputs[:2]
+            copy_logits = logits.clone()
+            predictions = self.tokenizer.convert_logits_to_predictions(
+                inputs, copy_logits, logits_agg, cell_classification_threshold=0.5
+            )
+            answer_coordinates_batch, agg_predictions = predictions
+            aggregators = {i: self.model.config.aggregation_labels[pred] for i, pred in enumerate(agg_predictions)}
+        else:
+            logits = outputs[0]
+            copy_logits = logits.clone()
+            predictions = self.tokenizer.convert_logits_to_predictions(
+                inputs, copy_logits, cell_classification_threshold=0.5
+            )
+            answer_coordinates_batch = predictions[0]
+            aggregators = {}
+        answer_scores = self._calculate_answer_score(logits, inputs, answer_coordinates_batch)
+        answers = []
+        for index, ans_coordinates_per_table in enumerate(answer_coordinates_batch):
+            if len(ans_coordinates_per_table) > 0:
+                cells = [string_table.iat[coordinate] for coordinate in ans_coordinates_per_table]
+                aggregator = aggregators.get(index, "")  # type: ignore
+                answer_str = (
+                    ", ".join(cells)
+                    if aggregator == "NONE"
+                    else self._aggregate_answers(aggregator, cells)
+                )
+                current_score = answer_scores[index]
+                answer_offsets = _calculate_answer_offsets(ans_coordinates_per_table)
+                answer = Answer(
+                    answer=answer_str,
+                    type="extractive",
+                    score=current_score,
+                    context=string_table,
+                    offsets_in_document=answer_offsets,
+                    offsets_in_context=answer_offsets,
+                    meta={"aggregation_operator": aggregator, "answer_cells": cells},
+                )
+                answers.append(answer)
+            else:
+                # If there is no answer then we use None to keep track of it.
+                answers.append(None)
         return answers
 
 
@@ -594,8 +593,7 @@ class _TapasScoredEncoder:
             )
 
         answers = sorted(answers, reverse=True)
-        results = {"query": query, "answers": answers[:top_k]}
-        return results
+        return {"query": query, "answers": answers[:top_k]}
 
     def predict_batch(self, queries: List[str], documents: List[List[Document]], top_k: int):
         results: Dict = {"queries": queries, "answers": []}
@@ -817,9 +815,7 @@ class RCIReader(BaseReader):
         answers = sorted(answers, reverse=True)
         answers = answers[:top_k]
 
-        results = {"query": query, "answers": answers}
-
-        return results
+        return {"query": query, "answers": answers}
 
     @staticmethod
     def _create_row_column_representations(table: pd.DataFrame) -> Tuple[List[str], List[str]]:
@@ -848,7 +844,7 @@ class RCIReader(BaseReader):
         if top_k is None:
             top_k = self.top_k
 
-        single_doc_list = bool(len(documents) > 0 and isinstance(documents[0], Document))
+        single_doc_list = len(documents) > 0 and isinstance(documents[0], Document)
 
         inputs = _flatten_inputs(queries, documents)
 
@@ -859,7 +855,7 @@ class RCIReader(BaseReader):
 
         # Group answers by question in case of multiple queries and single doc list
         if single_doc_list and len(queries) > 1:
-            num_docs_per_query = int(len(results["answers"]) / len(queries))
+            num_docs_per_query = len(results["answers"]) // len(queries)
             answers = []
             for i in range(0, len(results["answers"]), num_docs_per_query):
                 answer_group = results["answers"][i : i + num_docs_per_query]
@@ -875,10 +871,7 @@ def _calculate_answer_offsets(answer_coordinates: List[Tuple[int, int]]) -> List
 
     :param answer_coordinates: List of answer coordinates.
     """
-    answer_offsets = []
-    for coord in answer_coordinates:
-        answer_offsets.append(TableCell(row=coord[0], col=coord[1]))
-    return answer_offsets
+    return [TableCell(row=coord[0], col=coord[1]) for coord in answer_coordinates]
 
 
 def _check_documents(documents: List[Document]) -> List[Document]:

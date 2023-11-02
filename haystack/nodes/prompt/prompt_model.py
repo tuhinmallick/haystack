@@ -110,8 +110,7 @@ class PromptModel(BaseComponent):
         :param kwargs: Additional keyword arguments to pass to the invocation layer.
         :return: A list of model-generated responses for the prompt or prompts.
         """
-        output = self.model_invocation_layer.invoke(prompt=prompt, **kwargs)
-        return output
+        return self.model_invocation_layer.invoke(prompt=prompt, **kwargs)
 
     async def ainvoke(self, prompt: Union[str, List[str], List[Dict[str, str]]], **kwargs) -> List[str]:
         """

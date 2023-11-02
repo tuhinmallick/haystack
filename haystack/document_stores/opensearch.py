@@ -203,22 +203,21 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
         if knn_engine not in {"nmslib", "faiss", "score_script"}:
             raise ValueError(f"knn_engine must be either 'nmslib', 'faiss' or 'score_script' but was {knn_engine}")
 
-        if index_type in self.valid_index_types:
-            if index_type in ["ivf", "ivf_pq"] and knn_engine != "faiss":
-                raise DocumentStoreError("Use 'faiss' as knn_engine when using 'ivf' as index_type.")
-            self.index_type = index_type
-        else:
+        if index_type not in self.valid_index_types:
             raise DocumentStoreError(
                 f"Invalid value for index_type in constructor. Choose one of these values: {self.valid_index_types}."
             )
 
+        if index_type in {"ivf", "ivf_pq"} and knn_engine != "faiss":
+            raise DocumentStoreError("Use 'faiss' as knn_engine when using 'ivf' as index_type.")
+        self.index_type = index_type
         self.knn_engine = knn_engine
         self.knn_parameters = {} if knn_parameters is None else knn_parameters
         if ivf_train_size is not None:
             if ivf_train_size <= 0:
                 raise DocumentStoreError("`ivf_train_on_write_size` must be None or a positive integer.")
             self.ivf_train_size = ivf_train_size
-        elif self.index_type in ["ivf", "ivf_pq"]:
+        elif self.index_type in {"ivf", "ivf_pq"}:
             self.ivf_train_size = self._recommended_ivf_train_size()
         self.space_type = SIMILARITY_SPACE_TYPE_MAPPINGS[knn_engine][similarity]
         super().__init__(
@@ -286,7 +285,7 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
                 logger.warning(
                     "aws4auth and a username or the default username 'admin' are passed to the OpenSearchDocumentStore. The username will be ignored and aws4auth will be used for authentication."
                 )
-            client = OpenSearch(
+            return OpenSearch(
                 hosts=hosts,
                 http_auth=aws4auth,
                 connection_class=RequestsHttpConnection,
@@ -296,7 +295,7 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
             )
         elif username:
             # standard http_auth
-            client = OpenSearch(
+            return OpenSearch(
                 hosts=hosts,
                 http_auth=(username, password),
                 scheme=scheme,
@@ -307,7 +306,7 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
             )
         else:
             # no authentication needed
-            client = OpenSearch(
+            return OpenSearch(
                 hosts=hosts,
                 scheme=scheme,
                 ca_certs=ca_certs,
@@ -315,8 +314,6 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
                 timeout=timeout,
                 connection_class=connection_class,
             )
-
-        return client
 
     def write_documents(
         self,
@@ -789,8 +786,10 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
 
         result = self.client.search(index=index, body=body, headers=headers)["hits"]["hits"]
 
-        documents = [self._convert_es_hit_to_document(hit, scale_score=scale_score) for hit in result]
-        return documents
+        return [
+            self._convert_es_hit_to_document(hit, scale_score=scale_score)
+            for hit in result
+        ]
 
     def _construct_dense_query_body(
         self, query_emb: np.ndarray, return_embedding: bool, filters: Optional[FilterType] = None, top_k: int = 10
@@ -804,8 +803,9 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
             else:
                 body["query"]["bool"]["filter"] = filter_
 
-        excluded_fields = self._get_excluded_fields(return_embedding=return_embedding)
-        if excluded_fields:
+        if excluded_fields := self._get_excluded_fields(
+            return_embedding=return_embedding
+        ):
             body["_source"] = {"excludes": excluded_fields}
 
         return body
@@ -1196,12 +1196,11 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
                 if self._ivf_model_exists(index):
                     logger.info("Using existing IVF model '%s-ivf' for index '%s'.", index, index)
                     embeddings_field_mapping = {"type": "knn_vector", "model_id": f"{index}-ivf"}
-                    method = {}
                 else:
                     # IVF indices require training before they can be initialized. Setting index_type to HNSW until
                     # index is trained
                     logger.info("Using index of type 'flat' for index '%s' until IVF model is trained.", index)
-                    method = {}
+                method = {}
             else:
                 logger.error("Set index_type to either 'flat', 'hnsw', 'ivf', or 'ivf_pq'.")
                 method["name"] = "hnsw"
@@ -1272,7 +1271,7 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
         Generate OpenSearch query for vector similarity.
         """
         if self.knn_engine == "score_script":
-            query: dict = {
+            return {
                 "script_score": {
                     "query": {"match_all": {}},
                     "script": {
@@ -1286,13 +1285,23 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
                     },
                 }
             }
-        else:
-            if self.knn_engine == "faiss" and self.similarity == "cosine":
-                self.normalize_embedding(query_emb)
+        if self.knn_engine == "faiss" and self.similarity == "cosine":
+            self.normalize_embedding(query_emb)
 
-            query = {"bool": {"must": [{"knn": {self.embedding_field: {"vector": query_emb.tolist(), "k": top_k}}}]}}
-
-        return query
+        return {
+            "bool": {
+                "must": [
+                    {
+                        "knn": {
+                            self.embedding_field: {
+                                "vector": query_emb.tolist(),
+                                "k": top_k,
+                            }
+                        }
+                    }
+                ]
+            }
+        }
 
     def _get_raw_similarity_score(self, score):
         # adjust scores according to https://opensearch.org/docs/latest/search-plugins/knn/approximate-knn
@@ -1300,18 +1309,11 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
 
         # space type is required as criterion as there is no consistent similarity-to-space-type mapping across knn engines
         if self.space_type == "innerproduct":
-            if score > 1:
-                score = score - 1
-            else:
-                score = -(1 / score - 1)
+            score = score - 1 if score > 1 else -(1 / score - 1)
         elif self.space_type == "l2":
             score = 1 / score - 1
         elif self.space_type == "cosinesimil":
-            if self.knn_engine == "score_script":
-                score = score - 1
-            else:
-                score = -(1 / score - 2)
-
+            score = score - 1 if self.knn_engine == "score_script" else -(1 / score - 2)
         return score
 
     def _train_ivf_index(
@@ -1445,8 +1447,11 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
         return False
 
     def _get_ef_search_value(self) -> int:
-        ef_search = 20 if "ef_search" not in self.knn_parameters else self.knn_parameters["ef_search"]
-        return ef_search
+        return (
+            20
+            if "ef_search" not in self.knn_parameters
+            else self.knn_parameters["ef_search"]
+        )
 
     def _index_delete(self, index: str):
         if self._index_exists(index):
@@ -1575,21 +1580,22 @@ class OpenSearchDocumentStore(SearchEngineDocumentStore):
             body["query"]["bool"].update({"filter": LogicalFilterClause.parse(filters).convert_to_elasticsearch()})
         result = self.client.search(body=body, index=index, headers=headers)
 
-        values = []
         current_buckets = result["aggregations"]["metadata_agg"]["buckets"]
         after_key = result["aggregations"]["metadata_agg"].get("after_key", False)
-        for bucket in current_buckets:
-            values.append({"value": bucket["key"][key], "count": bucket["doc_count"]})
-
+        values = [
+            {"value": bucket["key"][key], "count": bucket["doc_count"]}
+            for bucket in current_buckets
+        ]
         # Only 10 results get returned at a time, so apply pagination
         while after_key:
             body["aggs"]["metadata_agg"]["composite"]["after"] = after_key
             result = self.client.search(body=body, index=index, headers=headers)
             current_buckets = result["aggregations"]["metadata_agg"]["buckets"]
             after_key = result["aggregations"]["metadata_agg"].get("after_key", False)
-            for bucket in current_buckets:
-                values.append({"value": bucket["key"][key], "count": bucket["doc_count"]})
-
+            values.extend(
+                {"value": bucket["key"][key], "count": bucket["doc_count"]}
+                for bucket in current_buckets
+            )
         return values
 
     def get_documents_by_id(

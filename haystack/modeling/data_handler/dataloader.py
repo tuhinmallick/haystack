@@ -78,12 +78,10 @@ class NamedDataLoader(DataLoader):
         )
 
     def __len__(self):
-        if type(self.dataset).__name__ == "_StreamingDataSet":
-            num_samples = len(self.dataset)
-            num_batches = ceil(num_samples / self.dataset.batch_size)
-            return num_batches
-        else:
+        if type(self.dataset).__name__ != "_StreamingDataSet":
             return super().__len__()
+        num_samples = len(self.dataset)
+        return ceil(num_samples / self.dataset.batch_size)
 
     def _compute_max_number_of_labels(self, batch, tensor_names) -> int:
         """

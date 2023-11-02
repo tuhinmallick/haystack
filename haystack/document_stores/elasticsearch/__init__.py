@@ -7,6 +7,6 @@ try:
     else:
         from .es7 import ElasticsearchDocumentStore  # type: ignore
 
-except (ModuleNotFoundError, ImportError):
+except ImportError:
     # Import ES 7 as default if ES is not installed to raise the error message that elasticsearch extra is needed
     from .es7 import ElasticsearchDocumentStore  # type: ignore

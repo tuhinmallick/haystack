@@ -264,7 +264,7 @@ class ElasticsearchDocumentStore(_ElasticsearchDocumentStore):
         try:
             # ping uses a HEAD request on the root URI. In some cases, the user might not have permissions for that,
             # resulting in a HTTP Forbidden 403 response.
-            if username in ["", "elastic"]:
+            if username in {"", "elastic"}:
                 status = client.ping()
                 if not status:
                     raise ConnectionError(

@@ -64,10 +64,7 @@ class FileTypeClassifier(BaseComponent):
         """
         try:
             with open(file_path, "rb") as f:
-                if self.full_analysis:
-                    buffer = f.read()
-                else:
-                    buffer = f.read(2049)
+                buffer = f.read() if self.full_analysis else f.read(2049)
                 extension = magic.from_buffer(buffer, mime=True)
                 real_extension = mimetypes.guess_extension(extension) or ""
                 real_extension = real_extension.lstrip(".")

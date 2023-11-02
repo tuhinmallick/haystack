@@ -233,8 +233,12 @@ class PseudoLabelGenerator(BaseComponent):
             negatives_batch = mined_negatives[i : i + batch_size]
             pb = []
             for item in negatives_batch:
-                pb.append([item["question"], item["pos_doc"]])
-                pb.append([item["question"], item["neg_doc"]])
+                pb.extend(
+                    (
+                        [item["question"], item["pos_doc"]],
+                        [item["question"], item["neg_doc"]],
+                    )
+                )
             scores = self.cross_encoder.predict(pb)
             for idx, item in enumerate(negatives_batch):
                 scores_idx = idx * 2

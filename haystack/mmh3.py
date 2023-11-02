@@ -8,10 +8,7 @@ if _sys.version_info > (3, 0):
         return range(a, b, c)
 
     def xencode(x):
-        if isinstance(x, (bytes, bytearray)):
-            return x
-        else:
-            return x.encode()
+        return x if isinstance(x, (bytes, bytearray)) else x.encode()
 
 else:
 
@@ -22,7 +19,7 @@ else:
 del _sys
 
 
-def hash128(key, seed=0x0, x64arch=True):  # noqa: C901,PLR0915
+def hash128(key, seed=0x0, x64arch=True):    # noqa: C901,PLR0915
     """Implements 128bit murmur3 hash."""
     # This function has a very high McCabe cyclomatic complexity score of 44
     # (recommended is 10) and contains 212 statements (recommended is 50).
@@ -341,7 +338,4 @@ def hash128(key, seed=0x0, x64arch=True):  # noqa: C901,PLR0915
 
     key = bytearray(xencode(key))
 
-    if x64arch:
-        return hash128_x64(key, seed)
-    else:
-        return hash128_x86(key, seed)
+    return hash128_x64(key, seed) if x64arch else hash128_x86(key, seed)
