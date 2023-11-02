@@ -96,11 +96,7 @@ class Processor(ABC):
         self.dev_filename = dev_filename
         self.test_filename = test_filename
         self.dev_split = dev_split
-        if data_dir:
-            self.data_dir = Path(data_dir)
-        else:
-            self.data_dir = None  # type: ignore
-
+        self.data_dir = Path(data_dir) if data_dir else None
         self._log_params()
         self.problematic_sample_ids: set = set()
 
@@ -147,7 +143,7 @@ class Processor(ABC):
         logger.debug(
             "Got more parameters than needed for loading %s: %s. Those won't be used!", processor_name, unused_args
         )
-        processor = cls.subclasses[processor_name](
+        return cls.subclasses[processor_name](
             data_dir=data_dir,
             tokenizer=tokenizer,
             max_seq_len=max_seq_len,
@@ -157,8 +153,6 @@ class Processor(ABC):
             dev_split=dev_split,
             **kwargs,
         )
-
-        return processor
 
     @classmethod
     def load_from_dir(cls, load_dir: str):
@@ -267,7 +261,7 @@ class Processor(ABC):
 
         # Because the fast tokenizers expect a str and not Path
         # always convert Path to str here.
-        self.tokenizer.save_pretrained(str(save_dir))
+        self.tokenizer.save_pretrained(save_dir)
 
         # save processor
         config["processor"] = self.__class__.__name__
@@ -297,7 +291,7 @@ class Processor(ABC):
 
         if label_name is None:
             label_name = f"{name}_label"
-        label_tensor_name = label_name + "_ids"
+        label_tensor_name = f"{label_name}_ids"
         self.tasks[name] = {
             "label_list": label_list,
             "metric": metric,
@@ -340,11 +334,13 @@ class Processor(ABC):
 
         :return: True if all the samples in the basket has computed its features, False otherwise
         """
-        return basket.samples and not any(sample.features is None for sample in basket.samples)
+        return basket.samples and all(
+            sample.features is not None for sample in basket.samples
+        )
 
     def _log_samples(self, n_samples: int, baskets: List[SampleBasket]):
         logger.debug("*** Show %s random examples ***", n_samples)
-        if len(baskets) == 0:
+        if not baskets:
             logger.debug("*** No samples to show because there are no baskets ***")
             return
         for _ in range(n_samples):
@@ -357,7 +353,7 @@ class Processor(ABC):
         names = ["max_seq_len", "dev_split"]
         for name in names:
             value = getattr(self, name)
-            params.update({name: str(value)})
+            params[name] = str(value)
         tracker.track_params(params)
 
 
@@ -416,12 +412,9 @@ class SquadProcessor(Processor):
             "Please adjust max_seq_len accordingly or use another model "
         )
 
-        assert doc_stride < (max_seq_len - max_query_length), (
-            "doc_stride ({}) is longer than max_seq_len ({}) minus space reserved for query tokens ({}). \nThis means that there will be gaps "
-            "as the passage windows slide, causing the model to skip over parts of the document.\n"
-            "Please set a lower value for doc_stride (Suggestions: doc_stride=128, max_seq_len=384)\n "
-            "Or decrease max_query_length".format(doc_stride, max_seq_len, max_query_length)
-        )
+        assert doc_stride < (
+            max_seq_len - max_query_length
+        ), f"doc_stride ({doc_stride}) is longer than max_seq_len ({max_seq_len}) minus space reserved for query tokens ({max_query_length}). \nThis means that there will be gaps as the passage windows slide, causing the model to skip over parts of the document.\nPlease set a lower value for doc_stride (Suggestions: doc_stride=128, max_seq_len=384)\n Or decrease max_query_length"
 
         self.doc_stride = doc_stride
         self.max_query_length = max_query_length
@@ -499,8 +492,7 @@ class SquadProcessor(Processor):
 
     def file_to_dicts(self, file: str) -> List[dict]:
         nested_dicts = _read_squad_file(filename=file)
-        dicts = [y for x in nested_dicts for y in x["paragraphs"]]
-        return dicts
+        return [y for x in nested_dicts for y in x["paragraphs"]]
 
     # TODO use Input Objects instead of this function, remove Natural Questions (NQ) related code
     def convert_qa_input_dict(self, infer_dict: dict) -> Dict[str, Any]:
@@ -516,12 +508,9 @@ class SquadProcessor(Processor):
         )
 
         # check again for doc stride vs max_seq_len when. Parameters can be changed for already initialized models (e.g. in haystack)
-        assert self.doc_stride < (self.max_seq_len - self.max_query_length), (
-            "doc_stride ({}) is longer than max_seq_len ({}) minus space reserved for query tokens ({}). \nThis means that there will be gaps "
-            "as the passage windows slide, causing the model to skip over parts of the document.\n"
-            "Please set a lower value for doc_stride (Suggestions: doc_stride=128, max_seq_len=384)\n "
-            "Or decrease max_query_length".format(self.doc_stride, self.max_seq_len, self.max_query_length)
-        )
+        assert self.doc_stride < (
+            self.max_seq_len - self.max_query_length
+        ), f"doc_stride ({self.doc_stride}) is longer than max_seq_len ({self.max_seq_len}) minus space reserved for query tokens ({self.max_query_length}). \nThis means that there will be gaps as the passage windows slide, causing the model to skip over parts of the document.\nPlease set a lower value for doc_stride (Suggestions: doc_stride=128, max_seq_len=384)\n Or decrease max_query_length"
 
         try:
             # Check if infer_dict is already in internal json format
@@ -531,9 +520,11 @@ class SquadProcessor(Processor):
             questions = infer_dict["questions"]
             text = infer_dict["text"]
             uid = infer_dict.get("id", None)
-            qas = [{"question": q, "id": uid, "answers": [], "answer_type": None} for i, q in enumerate(questions)]
-            converted = {"qas": qas, "context": text}
-            return converted
+            qas = [
+                {"question": q, "id": uid, "answers": [], "answer_type": None}
+                for q in questions
+            ]
+            return {"qas": qas, "context": text}
         except KeyError:
             raise Exception("Input does not have the expected format")
 
@@ -653,18 +644,17 @@ class SquadProcessor(Processor):
                         answer_start_t -= sample.tokenized["passage_start_t"]  # type: ignore
                         answer_end_t -= sample.tokenized["passage_start_t"]  # type: ignore
 
-                        # Initialize some basic variables
-                        question_len_t = len(sample.tokenized["question_tokens"])  # type: ignore
                         passage_len_t = len(sample.tokenized["passage_tokens"])  # type: ignore
 
                         # Check that start and end are contained within this passage
                         # answer_end_t is 0 if the first token is the answer
                         # answer_end_t is passage_len_t if the last token is the answer
                         if passage_len_t > answer_start_t >= 0 and passage_len_t >= answer_end_t >= 0:
+                            # Initialize some basic variables
+                            question_len_t = len(sample.tokenized["question_tokens"])  # type: ignore
                             # Then adjust the start and end offsets by adding question and special token
                             label_idxs[i][0] = self.sp_toks_start + question_len_t + self.sp_toks_mid + answer_start_t
                             label_idxs[i][1] = self.sp_toks_start + question_len_t + self.sp_toks_mid + answer_end_t
-                        # If the start or end of the span answer is outside the passage, treat passage as no_answer
                         else:
                             label_idxs[i][0] = 0
                             label_idxs[i][1] = 0
@@ -672,9 +662,7 @@ class SquadProcessor(Processor):
                         ########## answer checking ##############################
                         # TODO, move this checking into input validation functions and delete wrong examples there
                         # Cases where the answer is not within the current passage will be turned into no answers by the featurization fn
-                        if answer_start_t < 0 or answer_end_t >= passage_len_t:
-                            pass
-                        else:
+                        if answer_start_t >= 0 and answer_end_t < passage_len_t:
                             doc_text = basket.raw["document_text"]
                             answer_indices = doc_text[answer_start_c : answer_end_c + 1]
                             answer_text = answer["text"]
@@ -683,7 +671,7 @@ class SquadProcessor(Processor):
                                 logger.warning(
                                     "Answer '%s' not contained in context.\n"
                                     "Example will not be converted for training/evaluation.",
-                                    answer["text"],
+                                    answer_text,
                                 )
                                 error_in_answer = True
                                 label_idxs[i][0] = -100  # TODO remove this hack also from featurization
@@ -700,7 +688,7 @@ class SquadProcessor(Processor):
                                 label_idxs[i][0] = -100  # TODO remove this hack also from featurization
                                 label_idxs[i][1] = -100
                                 break  # Break loop around answers, so the error message is not shown multiple times
-                        ########## end of checking ####################
+                                        ########## end of checking ####################
 
                 sample.tokenized["labels"] = label_idxs  # type: ignore
 
@@ -825,7 +813,7 @@ class SquadProcessor(Processor):
             else:
                 # remove the entire basket
                 basket_to_remove.append(basket)
-        if len(basket_to_remove) > 0:
+        if basket_to_remove:
             for basket in basket_to_remove:
                 # if basket_to_remove is not empty remove the related baskets
                 baskets.remove(basket)
@@ -1222,7 +1210,7 @@ class TextSimilarityProcessor(Processor):
             else:
                 # remove the entire basket
                 basket_to_remove.append(basket)
-        if len(basket_to_remove) > 0:
+        if basket_to_remove:
             for basket in basket_to_remove:
                 # if basket_to_remove is not empty remove the related baskets
                 problematic_ids.add(basket.id_internal)
@@ -1462,8 +1450,7 @@ class TableTextSimilarityProcessor(Processor):
                  "rows": list of list of str, "label": "positive" / "hard_negative", "type": "table", "external_id": id}
             ...]}
         """
-        dicts = self._read_multimodal_dpr_json(file, max_samples=self.max_samples)
-        return dicts
+        return self._read_multimodal_dpr_json(file, max_samples=self.max_samples)
 
     def _read_multimodal_dpr_json(self, file: str, max_samples: Optional[int] = None) -> List[Dict]:
         """
@@ -1739,7 +1726,7 @@ class TableTextSimilarityProcessor(Processor):
             else:
                 # remove the entire basket
                 basket_to_remove.append(basket)
-        if len(basket_to_remove) > 0:
+        if basket_to_remove:
             for basket in basket_to_remove:
                 # if basket_to_remove is not empty remove the related baskets
                 problematic_ids.add(basket.id_internal)
@@ -1863,10 +1850,7 @@ class TextClassificationProcessor(Processor):
             proxies=proxies,
         )
         if metric and label_list:
-            if multilabel:
-                task_type = "multilabel_classification"
-            else:
-                task_type = "classification"
+            task_type = "multilabel_classification" if multilabel else "classification"
             self.add_task(
                 name="text_classification",
                 metric=metric,
@@ -1928,9 +1912,7 @@ class TextClassificationProcessor(Processor):
             curr_basket = SampleBasket(id_internal=None, raw=dictionary, id_external=None, samples=[curr_sample])
             baskets.append(curr_basket)
 
-        if indices and 0 not in indices:
-            pass
-        else:
+        if not indices or 0 in indices:
             self._log_samples(n_samples=1, baskets=baskets)
 
         # TODO populate problematic ids
@@ -2047,10 +2029,12 @@ class InferenceProcessor(TextClassificationProcessor):
 
     # Private method to keep s3e pooling and embedding extraction working
     def _sample_to_features(self, sample: Sample) -> Dict:
-        features = sample_to_features_text(
-            sample=sample, tasks=self.tasks, max_seq_len=self.max_seq_len, tokenizer=self.tokenizer
+        return sample_to_features_text(
+            sample=sample,
+            tasks=self.tasks,
+            max_seq_len=self.max_seq_len,
+            tokenizer=self.tokenizer,
         )
-        return features
 
 
 class UnlabeledTextProcessor(Processor):
@@ -2090,8 +2074,7 @@ class UnlabeledTextProcessor(Processor):
     def file_to_dicts(self, file: str) -> List[dict]:
         dicts = []
         with open(file, "r") as f:
-            for line in f:
-                dicts.append({"text": line})
+            dicts.extend({"text": line} for line in f)
         return dicts
 
     def dataset_from_dicts(
@@ -2203,8 +2186,7 @@ def _read_dpr_json(
     if Path(file).suffix.lower() == ".jsonl":
         dicts = []
         with open(file, encoding="utf-8") as f:
-            for line in f:
-                dicts.append(json.loads(line))
+            dicts.extend(json.loads(line) for line in f)
     else:
         with open(file, encoding="utf-8") as f:
             dicts = json.load(f)
@@ -2231,27 +2213,31 @@ def _read_dpr_json(
             elif key in positive_context_json_keys:
                 if shuffle_positives:
                     random.shuffle(val)
-                for passage in val[:num_positives]:
-                    passages.append(
-                        {
-                            "title": passage["title"],
-                            "text": passage["text"],
-                            "label": "positive",
-                            "external_id": passage.get("passage_id", uuid.uuid4().hex.upper()[0:8]),
-                        }
-                    )
+                passages.extend(
+                    {
+                        "title": passage["title"],
+                        "text": passage["text"],
+                        "label": "positive",
+                        "external_id": passage.get(
+                            "passage_id", uuid.uuid4().hex.upper()[:8]
+                        ),
+                    }
+                    for passage in val[:num_positives]
+                )
             elif key in hard_negative_json_keys:
                 if shuffle_negatives:
                     random.shuffle(val)
-                for passage in val[:num_hard_negatives]:
-                    passages.append(
-                        {
-                            "title": passage["title"],
-                            "text": passage["text"],
-                            "label": "hard_negative",
-                            "external_id": passage.get("passage_id", uuid.uuid4().hex.upper()[0:8]),
-                        }
-                    )
+                passages.extend(
+                    {
+                        "title": passage["title"],
+                        "text": passage["text"],
+                        "label": "hard_negative",
+                        "external_id": passage.get(
+                            "passage_id", uuid.uuid4().hex.upper()[:8]
+                        ),
+                    }
+                    for passage in val[:num_hard_negatives]
+                )
         sample["passages"] = passages
         standard_dicts.append(sample)
     return standard_dicts
@@ -2303,10 +2289,7 @@ def _download_extract_downstream_data(input_file: str, proxies=None):
     if taskname not in DOWNSTREAM_TASK_MAP:
         logger.error("Cannot download %s. Unknown data source.", taskname)
     else:
-        if os.name == "nt":  # make use of NamedTemporaryFile compatible with Windows
-            delete_tmp_file = False
-        else:
-            delete_tmp_file = True
+        delete_tmp_file = os.name != "nt"
         with tempfile.NamedTemporaryFile(delete=delete_tmp_file) as temp_file:
             http_get(DOWNSTREAM_TASK_MAP[taskname], temp_file, proxies=proxies)
             temp_file.flush()

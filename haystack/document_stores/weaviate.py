@@ -520,7 +520,7 @@ class WeaviateDocumentStore(KeywordDocumentStore):
         description = f"dynamic property {new_prop}"
         if data_type.startswith("dict"):
             # Weaviate does not support dict type, so we use string or list of string instead
-            data_type = "string" + data_type[4:]
+            data_type = f"string{data_type[4:]}"
             description = f"JSON dynamic property {new_prop}"
 
         property_dict = {"dataType": [data_type], "description": description, "name": new_prop}
@@ -564,7 +564,7 @@ class WeaviateDocumentStore(KeywordDocumentStore):
         """
         Find the properties in the document that don't exist in the existing schema.
         """
-        return [item for item in doc.keys() if item not in cur_props]
+        return [item for item in doc if item not in cur_props]
 
     def write_documents(
         self,
@@ -651,9 +651,9 @@ class WeaviateDocumentStore(KeywordDocumentStore):
 
                     # In order to have a flat structure in elastic + similar behaviour to the other DocumentStores,
                     # we "unnest" all value within "meta"
-                    if "meta" in _doc.keys():
+                    if "meta" in _doc:
                         for k, v in _doc["meta"].items():
-                            if k in _doc.keys():
+                            if k in _doc:
                                 raise ValueError(
                                     f'"meta" info contains duplicate key "{k}" with the top-level document structure'
                                 )
@@ -676,10 +676,9 @@ class WeaviateDocumentStore(KeywordDocumentStore):
                     # Converting content to JSON-string as Weaviate doesn't allow other nested list for tables
                     _doc["content"] = json.dumps(_doc["content"])
 
-                    # Check if additional properties are in the document, if so,
-                    # append the schema with all the additional properties
-                    missing_props = self._check_document(current_properties, _doc)
-                    if missing_props:
+                    if missing_props := self._check_document(
+                        current_properties, _doc
+                    ):
                         for property in missing_props:
                             property_value = _doc[property]
                             if property in json_fields:
@@ -723,9 +722,7 @@ class WeaviateDocumentStore(KeywordDocumentStore):
 
         current_properties = self._get_current_properties(index)
 
-        # Check if the new metadata contains additional properties and append them to the schema
-        missing_props = self._check_document(current_properties, meta)
-        if missing_props:
+        if missing_props := self._check_document(current_properties, meta):
             for property in missing_props:
                 self._update_schema(property, meta[property], index)
                 current_properties.append(property)
@@ -762,17 +759,19 @@ class WeaviateDocumentStore(KeywordDocumentStore):
             return 0
 
         index = self._sanitize_index_name(index) or self.index
-        doc_count = 0
         if filters:
             filter_dict = LogicalFilterClause.parse(filters).convert_to_weaviate()
             result = self.weaviate_client.query.aggregate(index).with_meta_count().with_where(filter_dict).do()
         else:
             result = self.weaviate_client.query.aggregate(index).with_meta_count().do()
 
-        if "data" in result and "Aggregate" in result.get("data") and result.get("data").get("Aggregate").get(index):
-            doc_count = result.get("data").get("Aggregate").get(index)[0]["meta"]["count"]
-
-        return doc_count
+        return (
+            result.get("data").get("Aggregate").get(index)[0]["meta"]["count"]
+            if "data" in result
+            and "Aggregate" in result.get("data")
+            and result.get("data").get("Aggregate").get(index)
+            else 0
+        )
 
     def get_all_documents(
         self,
@@ -842,8 +841,7 @@ class WeaviateDocumentStore(KeywordDocumentStore):
         result = self.get_all_documents_generator(
             index=index, filters=filters, return_embedding=return_embedding, batch_size=batch_size
         )
-        documents = list(result)
-        return documents
+        return list(result)
 
     def _get_all_documents_in_index(
         self,
@@ -995,10 +993,11 @@ class WeaviateDocumentStore(KeywordDocumentStore):
         # We retrieve the JSON properties from the schema and convert them back to the Python dicts
         json_properties = self._get_json_properties(index=index)
         for result in results:
-            document = self._convert_weaviate_result_to_document(
-                result, return_embedding=return_embedding, json_properties=json_properties
+            yield self._convert_weaviate_result_to_document(
+                result,
+                return_embedding=return_embedding,
+                json_properties=json_properties,
             )
-            yield document
 
     def query(
         self,

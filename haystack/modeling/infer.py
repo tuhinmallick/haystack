@@ -426,12 +426,11 @@ class Inferencer:
 
         # can assume that we have only complete docs i.e. all the samples of one doc are in the current chunk
         logits = [None]
-        preds_all = self.model.formatted_preds(
+        return self.model.formatted_preds(
             logits=logits,  # For QA we collected preds per batch and do not want to pass logits
             preds=unaggregated_preds_all,
             baskets=baskets,
-        )  # type ignore
-        return preds_all
+        )
 
     def extract_vectors(
         self, dicts: List[Dict], extraction_strategy: Optional[str] = "cls_token", extraction_layer: Optional[int] = -1

@@ -52,8 +52,7 @@ with LazyImport(message="Run 'pip install farm-haystack[inference]'") as torch_a
 
         def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
             for stop_word in self.stop_words:
-                found_stop_word = self.is_stop_word_found(input_ids, stop_word)
-                if found_stop_word:
+                if found_stop_word := self.is_stop_word_found(input_ids, stop_word):
                     return True
             return False
 
@@ -61,8 +60,11 @@ with LazyImport(message="Run 'pip install farm-haystack[inference]'") as torch_a
             generated_text_ids = generated_text_ids[-1]
             len_generated_text_ids = generated_text_ids.size(0)
             len_stop_word = stop_word.size(0)
-            result = all(generated_text_ids[len_generated_text_ids - len_stop_word :].eq(stop_word))
-            return result
+            return all(
+                generated_text_ids[len_generated_text_ids - len_stop_word :].eq(
+                    stop_word
+                )
+            )
 
 
 class HFLocalInvocationLayer(PromptModelInvocationLayer):
@@ -197,7 +199,7 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
             # Otherwise, calling `self.pipe.tokenizer.model_max_length` will return an error.
             tokenizer = self._prepare_tokenizer(model, hub_kwargs, model_kwargs)
 
-        pipeline_kwargs = {
+        return {
             "task": kwargs.get("task", None),
             "model": model,
             "config": kwargs.get("config", None),
@@ -211,7 +213,6 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
             "use_fast": kwargs.get("use_fast", True),
             **hub_kwargs,
         }
-        return pipeline_kwargs
 
     def invoke(self, *args, **kwargs):
         """
@@ -317,10 +318,9 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
             model_max_length,
         )
 
-        decoded_string = self.pipe.tokenizer.convert_tokens_to_string(
+        return self.pipe.tokenizer.convert_tokens_to_string(
             tokenized_prompt[: model_max_length - n_answer_tokens]
         )
-        return decoded_string
 
     def _extract_torch_dtype(self, **kwargs) -> Optional["torch.dtype"]:
         torch_dtype_resolved = None
@@ -374,10 +374,9 @@ class HFLocalInvocationLayer(PromptModelInvocationLayer):
                 "by the transformers library.",
                 model,
             )
-            tokenizer = AutoTokenizer.from_pretrained(model, **hub_kwargs, **model_kwargs)
+            return AutoTokenizer.from_pretrained(model, **hub_kwargs, **model_kwargs)
         else:
-            tokenizer = None
-        return tokenizer
+            return None
 
     @classmethod
     def supports(cls, model_name_or_path: str, **kwargs) -> bool:

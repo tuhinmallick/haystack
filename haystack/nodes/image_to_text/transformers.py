@@ -155,12 +155,12 @@ class TransformersImageToText(BaseImageToText):
         generation_kwargs = generation_kwargs or self.generation_kwargs
         batch_size = batch_size or self.batch_size
 
-        if len(image_file_paths) == 0:
+        if not image_file_paths:
             raise ImageToTextError("ImageToText needs at least one file path to produce a caption.")
 
         if type(image_file_paths) is not list:
             raise ImageToTextError(
-                "Expected List[str] for image_file_paths, got %s instead" % str(type(image_file_paths))
+                f"Expected List[str] for image_file_paths, got {str(type(image_file_paths))} instead"
             )
 
         images_dataset = ListDataset(image_file_paths)
@@ -168,14 +168,19 @@ class TransformersImageToText(BaseImageToText):
         captions: List[str] = []
 
         try:
-            for captions_batch in tqdm(
-                self.model(images_dataset, generate_kwargs=generation_kwargs, batch_size=batch_size),
-                disable=not self.progress_bar,
-                total=len(images_dataset),
-                desc="Generating captions",
-            ):
-                captions.append("".join([el["generated_text"] for el in captions_batch]).strip())
-
+            captions.extend(
+                "".join([el["generated_text"] for el in captions_batch]).strip()
+                for captions_batch in tqdm(
+                    self.model(
+                        images_dataset,
+                        generate_kwargs=generation_kwargs,
+                        batch_size=batch_size,
+                    ),
+                    disable=not self.progress_bar,
+                    total=len(images_dataset),
+                    desc="Generating captions",
+                )
+            )
         except Exception as exc:
             raise ImageToTextError(str(exc)) from exc
 

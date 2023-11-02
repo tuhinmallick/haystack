@@ -19,7 +19,7 @@ class PromptModelInvocationLayer:
         :param model_name_or_path: The name or path of the underlying model.
         :param kwargs: Additional keyword arguments passed to the underlying model.
         """
-        if model_name_or_path is None or len(model_name_or_path) == 0:
+        if model_name_or_path is None or not model_name_or_path:
             raise ValueError("model_name_or_path cannot be None or empty string")
 
         self.model_name_or_path = model_name_or_path

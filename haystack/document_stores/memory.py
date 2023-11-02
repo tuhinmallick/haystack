@@ -250,8 +250,10 @@ class InMemoryDocumentStore(KeywordDocumentStore):
         index = index or self.label_index
         label_objects = [Label.from_dict(l) if isinstance(l, dict) else l for l in labels]
 
-        duplicate_ids: list = [label.id for label in self._get_duplicate_labels(label_objects, index=index)]
-        if len(duplicate_ids) > 0:
+        if duplicate_ids := [
+            label.id
+            for label in self._get_duplicate_labels(label_objects, index=index)
+        ]:
             logger.warning(
                 "Duplicate Label IDs: Inserting a Label whose id already exists in this document store."
                 " This will overwrite the old Label. Please make sure Label.id is a unique identifier of"
@@ -278,8 +280,7 @@ class InMemoryDocumentStore(KeywordDocumentStore):
             raise NotImplementedError("InMemoryDocumentStore does not support headers.")
 
         index = index or self.index
-        documents = self.get_documents_by_id([id], index=index)
-        if documents:
+        if documents := self.get_documents_by_id([id], index=index):
             return documents[0]
         else:
             return None
@@ -301,8 +302,7 @@ class InMemoryDocumentStore(KeywordDocumentStore):
                 "InMemoryDocumentStore does not support batching in `get_documents_by_id` method. This parameter is ignored."
             )
         index = index or self.index
-        documents = [self.indexes[index][id] for id in ids]
-        return documents
+        return [self.indexes[index][id] for id in ids]
 
     def _get_scores_torch(self, query_emb: np.ndarray, documents_to_search: List[Document]) -> List[float]:
         """
@@ -375,17 +375,14 @@ class InMemoryDocumentStore(KeywordDocumentStore):
             doc_embeds_norms = np.expand_dims(doc_embeds_norms, 1)
             doc_embeds = np.divide(doc_embeds, doc_embeds_norms)
 
-        scores = np.dot(query_emb, doc_embeds.T)[0].tolist()
-
-        return scores
+        return np.dot(query_emb, doc_embeds.T)[0].tolist()
 
     def _get_scores(self, query_emb: np.ndarray, documents_to_search: List[Document]) -> List[float]:
-        if self.main_device.type == "cuda":
-            scores = self._get_scores_torch(query_emb, documents_to_search)
-        else:
-            scores = self._get_scores_numpy(query_emb, documents_to_search)
-
-        return scores
+        return (
+            self._get_scores_torch(query_emb, documents_to_search)
+            if self.main_device.type == "cuda"
+            else self._get_scores_numpy(query_emb, documents_to_search)
+        )
 
     def query_by_embedding(
         self,
@@ -502,7 +499,11 @@ class InMemoryDocumentStore(KeywordDocumentStore):
             new_document.score = score
             candidate_docs.append(new_document)
 
-        return sorted(candidate_docs, key=lambda x: x.score if x.score is not None else 0.0, reverse=True)[0:top_k]
+        return sorted(
+            candidate_docs,
+            key=lambda x: x.score if x.score is not None else 0.0,
+            reverse=True,
+        )[:top_k]
 
     def update_embeddings(
         self,
@@ -611,8 +612,7 @@ class InMemoryDocumentStore(KeywordDocumentStore):
         Return the count of embeddings in the document store.
         """
         documents = self.get_all_documents_generator(filters=filters, index=index, return_embedding=True)
-        embedding_count = sum(doc.embedding is not None for doc in documents)
-        return embedding_count
+        return sum(doc.embedding is not None for doc in documents)
 
     def get_label_count(self, index: Optional[str] = None, headers: Optional[Dict[str, str]] = None) -> int:
         """
@@ -645,11 +645,9 @@ class InMemoryDocumentStore(KeywordDocumentStore):
             documents = [doc for doc in documents if doc.embedding is None]
         if filters:
             parsed_filter = LogicalFilterClause.parse(filters)
-            filtered_documents = list(filter(lambda doc: parsed_filter.evaluate(doc.meta), documents))
+            return list(filter(lambda doc: parsed_filter.evaluate(doc.meta), documents))
         else:
-            filtered_documents = documents
-
-        return filtered_documents
+            return documents
 
     def get_all_documents(
         self,
@@ -696,8 +694,7 @@ class InMemoryDocumentStore(KeywordDocumentStore):
         result = self.get_all_documents_generator(
             index=index, filters=filters, return_embedding=return_embedding, batch_size=batch_size
         )
-        documents = list(result)
-        return documents
+        return list(result)
 
     def get_all_documents_generator(
         self,
@@ -742,8 +739,9 @@ class InMemoryDocumentStore(KeywordDocumentStore):
         if headers:
             raise NotImplementedError("InMemoryDocumentStore does not support headers.")
 
-        result = self._query(index=index, filters=filters, return_embedding=return_embedding)
-        yield from result
+        yield from self._query(
+            index=index, filters=filters, return_embedding=return_embedding
+        )
 
     def get_all_labels(
         self,
@@ -763,16 +761,13 @@ class InMemoryDocumentStore(KeywordDocumentStore):
             result = []
             for label in self.indexes[index].values():
                 label_dict = label.to_dict()
-                is_hit = True
-                for key, value_or_values in filters.items():
-                    if isinstance(value_or_values, list):
-                        if label_dict[key] not in value_or_values:
-                            is_hit = False
-                            break
-                    else:
-                        if label_dict[key] != value_or_values:
-                            is_hit = False
-                            break
+                is_hit = not any(
+                    isinstance(value_or_values, list)
+                    and label_dict[key] not in value_or_values
+                    or not isinstance(value_or_values, list)
+                    and label_dict[key] != value_or_values
+                    for key, value_or_values in filters.items()
+                )
                 if is_hit:
                     result.append(label)
         else:
@@ -973,7 +968,7 @@ class InMemoryDocumentStore(KeywordDocumentStore):
             logger.warning("InMemoryDocumentStore does not support headers. This parameter is ignored.")
         if custom_query:
             logger.warning("InMemoryDocumentStore does not support custom_query. This parameter is ignored.")
-        if all_terms_must_match is True:
+        if all_terms_must_match:
             logger.warning("InMemoryDocumentStore does not support all_terms_must_match. This parameter is ignored.")
         if filters:
             logger.warning(
@@ -991,7 +986,7 @@ class InMemoryDocumentStore(KeywordDocumentStore):
 
         tokenized_query = self.bm25_tokenization_regex(query.lower())
         docs_scores = self.bm25[index].get_scores(tokenized_query)
-        if scale_score is True:
+        if scale_score:
             # scaling probability from BM25
             docs_scores = [float(expit(np.asarray(score / 8))) for score in docs_scores]
         top_docs_positions = np.argsort(docs_scores)[::-1][:top_k]
@@ -1030,7 +1025,7 @@ class InMemoryDocumentStore(KeywordDocumentStore):
             logger.warning("InMemoryDocumentStore does not support headers. This parameter is ignored.")
         if custom_query:
             logger.warning("InMemoryDocumentStore does not support custom_query. This parameter is ignored.")
-        if all_terms_must_match is True:
+        if all_terms_must_match:
             logger.warning("InMemoryDocumentStore does not support all_terms_must_match. This parameter is ignored.")
         if filters:
             logger.warning(
@@ -1043,8 +1038,9 @@ class InMemoryDocumentStore(KeywordDocumentStore):
                 f"No BM25 representation found for the index: {index}. The Document store should be initialized with use_bm25=True"
             )
 
-        result_documents = []
-        for query in queries:
-            result_documents.append(self.query(query=query, top_k=top_k, index=index, scale_score=scale_score))
-
-        return result_documents
+        return [
+            self.query(
+                query=query, top_k=top_k, index=index, scale_score=scale_score
+            )
+            for query in queries
+        ]

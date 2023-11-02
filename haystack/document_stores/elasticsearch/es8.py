@@ -21,7 +21,7 @@ def _prepare_hosts(host: Union[str, List[str]], port: Union[int, List[int]], sch
     """
     if isinstance(host, list):
         if isinstance(port, list):
-            if not len(port) == len(host):
+            if len(port) != len(host):
                 raise ValueError("Length of list `host` must match length of list `port`")
             hosts = [{"host": h, "port": p, "scheme": scheme} for h, p in zip(host, port)]
         else:
@@ -221,68 +221,56 @@ class ElasticsearchDocumentStore(_ElasticsearchDocumentStore):
 
         node_class = RequestsHttpNode if use_system_proxy else Urllib3HttpNode
 
-        if api_key_id and api_key:
-            # api key authentication
-            if ca_certs is not None:
-                client = Elasticsearch(
-                    hosts=hosts,
-                    api_key=(api_key_id, api_key),
-                    ca_certs=ca_certs,
-                    verify_certs=verify_certs,
-                    request_timeout=timeout,
-                    node_class=node_class,
-                )
-            else:
-                client = Elasticsearch(
-                    hosts=hosts,
-                    api_key=(api_key_id, api_key),
-                    verify_certs=verify_certs,
-                    request_timeout=timeout,
-                    node_class=node_class,
-                )
-        elif username:
-            # standard http_auth
-            if ca_certs is not None:
-                client = Elasticsearch(
-                    hosts=hosts,
-                    basic_auth=(username, password),
-                    ca_certs=ca_certs,
-                    verify_certs=verify_certs,
-                    request_timeout=timeout,
-                    node_class=node_class,
-                )
-            else:
-                client = Elasticsearch(
-                    hosts=hosts,
-                    basic_auth=(username, password),
-                    verify_certs=verify_certs,
-                    request_timeout=timeout,
-                    node_class=node_class,
-                )
+        if not api_key_id and username and ca_certs is not None:
+            client = Elasticsearch(
+                hosts=hosts,
+                basic_auth=(username, password),
+                ca_certs=ca_certs,
+                verify_certs=verify_certs,
+                request_timeout=timeout,
+                node_class=node_class,
+            )
+        elif not api_key_id and username or not api_key_id and ca_certs is None:
+            client = Elasticsearch(
+                hosts=hosts,
+                basic_auth=(username, password),
+                verify_certs=verify_certs,
+                request_timeout=timeout,
+                node_class=node_class,
+            )
+        elif not api_key_id:
+            client = Elasticsearch(
+                hosts=hosts,
+                ca_certs=ca_certs,
+                verify_certs=verify_certs,
+                request_timeout=timeout,
+                node_class=node_class,
+            )
         else:
-            # there is no authentication for this elasticsearch instance
-            if ca_certs is not None:
-                client = Elasticsearch(
+            # api key authentication
+            client = (
+                Elasticsearch(
                     hosts=hosts,
+                    api_key=(api_key_id, api_key),
                     ca_certs=ca_certs,
                     verify_certs=verify_certs,
                     request_timeout=timeout,
                     node_class=node_class,
                 )
-            else:
-                client = Elasticsearch(
+                if ca_certs is not None
+                else Elasticsearch(
                     hosts=hosts,
-                    basic_auth=(username, password),
+                    api_key=(api_key_id, api_key),
                     verify_certs=verify_certs,
                     request_timeout=timeout,
                     node_class=node_class,
                 )
-
+            )
         # Test connection
         try:
             # ping uses a HEAD request on the root URI. In some cases, the user might not have permissions for that,
             # resulting in a HTTP Forbidden 403 response.
-            if username in ["", "elastic"]:
+            if username in {"", "elastic"}:
                 status = client.ping()
                 if not status:
                     raise ConnectionError(

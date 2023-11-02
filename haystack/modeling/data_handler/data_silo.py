@@ -258,8 +258,7 @@ class DataSilo:
             "dev_split": self.processor.dev_split,
             "tasks": self.processor.tasks,
         }
-        checksum = get_dict_checksum(payload_dict)
-        return checksum
+        return get_dict_checksum(payload_dict)
 
     def _save_dataset_to_cache(self):
         """
@@ -398,24 +397,16 @@ class DataSilo:
         else:
             self.counts["train"] = 0
 
-        if self.data["dev"]:
-            self.counts["dev"] = len(self.data["dev"])
-        else:
-            self.counts["dev"] = 0
-
-        if self.data["test"]:
-            self.counts["test"] = len(self.data["test"])
-        else:
-            self.counts["test"] = 0
-
+        self.counts["dev"] = len(self.data["dev"]) if self.data["dev"] else 0
+        self.counts["test"] = len(self.data["test"]) if self.data["test"] else 0
         logger.info("Examples in train: %s", self.counts["train"])
         logger.info("Examples in dev  : %s", self.counts["dev"])
         logger.info("Examples in test : %s", self.counts["test"])
         logger.info("Total examples   : %s", self.counts["train"] + self.counts["dev"] + self.counts["test"])
         logger.info("")
-        if self.data["train"]:
             # SquadProcessor does not clip sequences, but splits them into multiple samples
-            if "input_ids" in self.tensor_names and not isinstance(self.processor, SquadProcessor):
+        if "input_ids" in self.tensor_names and not isinstance(self.processor, SquadProcessor):
+            if self.data["train"]:
                 logger.info("Longest sequence length observed after clipping:     %s", max(seq_lens))
                 logger.info("Average sequence length after clipping: %s", ave_len)
                 logger.info("Proportion clipped:      %s", clipped)
@@ -430,7 +421,8 @@ class DataSilo:
                         max_seq_len,
                         self.processor.tokenizer.model_max_length,
                     )
-            elif "query_input_ids" in self.tensor_names and "passage_input_ids" in self.tensor_names:
+        elif "query_input_ids" in self.tensor_names and "passage_input_ids" in self.tensor_names:
+            if self.data["train"]:
                 logger.info(
                     "Longest query length observed after clipping: %s   - for max_query_len: %s",
                     max(seq_lens[0]),
@@ -625,12 +617,9 @@ class DataSiloForCrossVal:
                 sets_to_concat.extend(datasilo.data[setname])
         all_data = ConcatDataset(sets_to_concat)  # type: Dataset
 
-        documents = []
         keyfunc = lambda x: x[id_index][0]  # pylint: disable=unnecessary-lambda-assignment
         all_data = sorted(all_data.datasets, key=keyfunc)  # type: ignore
-        for _, document in groupby(all_data, key=keyfunc):  # type: ignore
-            documents.append(list(document))
-
+        documents = [list(document) for _, document in groupby(all_data, key=keyfunc)]
         xval_split = cls._split_for_qa(
             documents=documents, id_index=id_index, n_splits=n_splits, shuffle=shuffle, random_state=random_state
         )
@@ -664,16 +653,9 @@ class DataSiloForCrossVal:
                         else:
                             neg_answer_idx.append(index)
                     # add random n_neg_answers_per_question samples to train set
-                    if len(neg_answer_idx) <= n_neg_answers_per_question:
-                        train_samples.extend([sample_list[idx] for idx in neg_answer_idx])
-                    else:
+                    if len(neg_answer_idx) > n_neg_answers_per_question:
                         neg_answer_idx = random.sample(neg_answer_idx, n_neg_answers_per_question)
-                        train_samples.extend(
-                            # For some reason pylint seems to be just wrong here. It's therefore silenced.
-                            # Check if the issue persists in case of a future refactoring.
-                            [sample_list[idx] for idx in neg_answer_idx]  # pylint: disable=invalid-sequence-index
-                        )
-
+                    train_samples.extend([sample_list[idx] for idx in neg_answer_idx])
             ds_train = train_samples
             ds_test = [sample for document in test_set for sample in document]
             silos.append(DataSiloForCrossVal(datasilo, ds_train, ds_dev, ds_test))  # type: ignore [arg-type]
@@ -722,8 +704,9 @@ def get_dict_checksum(payload_dict):
     """
     Get MD5 checksum for a dict.
     """
-    checksum = hashlib.md5(json.dumps(payload_dict, sort_keys=True).encode("utf-8")).hexdigest()
-    return checksum
+    return hashlib.md5(
+        json.dumps(payload_dict, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
 
 class DistillationDataSilo(DataSilo):
@@ -770,9 +753,9 @@ class DistillationDataSilo(DataSilo):
             "segment_ids": batch["segment_ids"],
             "padding_mask": batch["padding_mask"],
         }
-        if "output_hidden_states" in batch.keys():
+        if "output_hidden_states" in batch:
             params["output_hidden_states"] = batch["output_hidden_states"]
-        if "output_attentions" in batch.keys():
+        if "output_attentions" in batch:
             params["output_attentions"] = batch["output_attentions"]
         return self.teacher.inferencer.model(**params)
 
@@ -799,7 +782,7 @@ class DistillationDataSilo(DataSilo):
             return
 
     def _teacher_output_names(self) -> List[str]:
-        return ["teacher_output_" + str(i) for i in range(self.output_len)]
+        return [f"teacher_output_{str(i)}" for i in range(self.output_len)]
 
     def _get_dataset(self, filename: Optional[Union[str, Path]], dicts: Optional[List[Dict]] = None):
         concat_datasets, tensor_names = super()._get_dataset(filename, dicts)
@@ -847,5 +830,4 @@ class DistillationDataSilo(DataSilo):
             "teacher_name_or_path": self.teacher.model_name_or_path,
             "data_silo_type": self.__class__.__name__,
         }
-        checksum = get_dict_checksum(payload_dict)
-        return checksum
+        return get_dict_checksum(payload_dict)

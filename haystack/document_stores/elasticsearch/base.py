@@ -133,11 +133,12 @@ class _ElasticsearchDocumentStore(SearchEngineDocumentStore):
                 raise self._RequestError(e.status_code, error_message, e.info)
             raise e
 
-        documents = [
-            self._convert_es_hit_to_document(hit, adapt_score_for_embedding=True, scale_score=scale_score)
+        return [
+            self._convert_es_hit_to_document(
+                hit, adapt_score_for_embedding=True, scale_score=scale_score
+            )
             for hit in result
         ]
-        return documents
 
     def _construct_dense_query_body(
         self, query_emb: np.ndarray, return_embedding: bool, filters: Optional[FilterType] = None, top_k: int = 10
@@ -150,8 +151,9 @@ class _ElasticsearchDocumentStore(SearchEngineDocumentStore):
             else:
                 body["query"]["script_score"]["query"]["bool"]["filter"]["bool"]["must"].append(filter_)
 
-        excluded_fields = self._get_excluded_fields(return_embedding=return_embedding)
-        if excluded_fields:
+        if excluded_fields := self._get_excluded_fields(
+            return_embedding=return_embedding
+        ):
             body["_source"] = {"excludes": excluded_fields}
 
         return body
@@ -321,7 +323,7 @@ class _ElasticsearchDocumentStore(SearchEngineDocumentStore):
         else:
             similarity_script_source = f"{similarity_fn_name}(params.query_vector,'{self.embedding_field}') + 1000"
 
-        query = {
+        return {
             "script_score": {
                 "query": script_score_query,
                 "script": {
@@ -331,7 +333,6 @@ class _ElasticsearchDocumentStore(SearchEngineDocumentStore):
                 },
             }
         }
-        return query
 
     def _get_raw_similarity_score(self, score):
         return score - 1000

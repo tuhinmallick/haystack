@@ -107,21 +107,24 @@ class HFInferenceEndpointInvocationLayer(PromptModelInvocationLayer):
             )
 
     def preprocess_prompt(self, prompt: str):
-        for key, prompt_preprocessor in self.prompt_preprocessors.items():
-            if key in self.model_name_or_path:
-                return prompt_preprocessor(prompt)
-        return prompt
+        return next(
+            (
+                prompt_preprocessor(prompt)
+                for key, prompt_preprocessor in self.prompt_preprocessors.items()
+                if key in self.model_name_or_path
+            ),
+            prompt,
+        )
 
     @property
     def url(self) -> str:
-        if HFInferenceEndpointInvocationLayer.is_inference_endpoint(self.model_name_or_path):
-            # Inference Endpoint URL
-            # i.e. https://o3x2xh3o4m47mxny.us-east-1.aws.endpoints.huggingface.cloud
-            url = self.model_name_or_path
-
-        else:
-            url = f"https://api-inference.huggingface.co/models/{self.model_name_or_path}"
-        return url
+        return (
+            self.model_name_or_path
+            if HFInferenceEndpointInvocationLayer.is_inference_endpoint(
+                self.model_name_or_path
+            )
+            else f"https://api-inference.huggingface.co/models/{self.model_name_or_path}"
+        )
 
     @property
     def headers(self) -> Dict[str, str]:
@@ -175,11 +178,10 @@ class HFInferenceEndpointInvocationLayer(PromptModelInvocationLayer):
         )
         if stream:
             handler: TokenStreamingHandler = kwargs_with_defaults.pop("stream_handler", DefaultTokenStreamingHandler())
-            generated_texts = self._process_streaming_response(response, handler, stop_words)
+            return self._process_streaming_response(response, handler, stop_words)
         else:
             output = json.loads(response.text)
-            generated_texts = [o["generated_text"] for o in output if "generated_text" in o]
-        return generated_texts
+            return [o["generated_text"] for o in output if "generated_text" in o]
 
     def _process_streaming_response(
         self, response: requests.Response, stream_handler: TokenStreamingHandler, stop_words: List[str]
@@ -282,15 +284,14 @@ class HFInferenceEndpointInvocationLayer(PromptModelInvocationLayer):
     def supports(cls, model_name_or_path: str, **kwargs) -> bool:
         if cls.is_inference_endpoint(model_name_or_path):
             return True
-        else:
-            # Check if the model is an HF inference API
-            task_name: Optional[str] = None
-            is_inference_api = False
-            try:
-                task_name = get_task(model_name_or_path, use_auth_token=kwargs.get("use_auth_token", None))
-                is_inference_api = bool(kwargs.get("api_key", None))
-            except RuntimeError:
-                # This will fail for all non-HF models
-                return False
+        # Check if the model is an HF inference API
+        task_name: Optional[str] = None
+        is_inference_api = False
+        try:
+            task_name = get_task(model_name_or_path, use_auth_token=kwargs.get("use_auth_token", None))
+            is_inference_api = bool(kwargs.get("api_key", None))
+        except RuntimeError:
+            # This will fail for all non-HF models
+            return False
 
-            return is_inference_api and task_name in ["text2text-generation", "text-generation"]
+        return is_inference_api and task_name in ["text2text-generation", "text-generation"]

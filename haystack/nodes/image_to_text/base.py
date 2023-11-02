@@ -28,7 +28,7 @@ class BaseImageToText(BaseComponent):
         """
         pass
 
-    def run(self, file_paths: Optional[List[str]] = None, documents: Optional[List[Document]] = None):  # type: ignore
+    def run(self, file_paths: Optional[List[str]] = None, documents: Optional[List[Document]] = None):    # type: ignore
         """
         :param file_paths: Paths to the images for which you want to generate captions.
         :param documents: List of image Documents to process into text.
@@ -44,9 +44,9 @@ class BaseImageToText(BaseComponent):
                 raise ValueError("The ImageToText node only supports image documents.")
             image_file_paths.extend([doc.content for doc in documents])
 
-        results: dict = {}
-        results["documents"] = self.generate_captions(image_file_paths=image_file_paths)
-
+        results: dict = {
+            "documents": self.generate_captions(image_file_paths=image_file_paths)
+        }
         return results, "output_1"
 
     def run_batch(  # type: ignore

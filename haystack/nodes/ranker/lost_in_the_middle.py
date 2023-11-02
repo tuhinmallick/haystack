@@ -55,7 +55,7 @@ class LostInTheMiddleRanker(BaseRanker):
             return documents
 
         # Raise an error if any document is not textual
-        if any(not doc.content_type == "text" for doc in documents):
+        if any(doc.content_type != "text" for doc in documents):
             raise ValueError("Some provided documents are not textual; LostInTheMiddleRanker can process only text.")
 
         # Initialize word count and indices for the "lost in the middle" order
@@ -102,8 +102,7 @@ class LostInTheMiddleRanker(BaseRanker):
         """
         top_k = top_k or self.top_k
         documents_to_reorder = documents[:top_k] if top_k else documents
-        ranked_docs = self.reorder_documents(documents=documents_to_reorder)
-        return ranked_docs
+        return self.reorder_documents(documents=documents_to_reorder)
 
     def predict_batch(
         self,
@@ -124,10 +123,9 @@ class LostInTheMiddleRanker(BaseRanker):
         """
         if len(documents) > 0 and isinstance(documents[0], Document):
             return self.predict(query="", documents=documents, top_k=top_k)  # type: ignore
-        else:
-            # Docs case 2: list of lists of Documents -> rerank each list of Documents
-            results = []
-            for cur_docs in documents:
-                assert isinstance(cur_docs, list)
-                results.append(self.predict(query="", documents=cur_docs, top_k=top_k))
-            return results
+        # Docs case 2: list of lists of Documents -> rerank each list of Documents
+        results = []
+        for cur_docs in documents:
+            assert isinstance(cur_docs, list)
+            results.append(self.predict(query="", documents=cur_docs, top_k=top_k))
+        return results

@@ -152,10 +152,9 @@ class SentenceTransformersRanker(BaseRanker):
             reverse=True,
         )
 
-        # add normalized scores to documents
-        sorted_documents = self._add_scores_to_documents(sorted_scores_and_documents[:top_k], logits_dim)
-
-        return sorted_documents
+        return self._add_scores_to_documents(
+            sorted_scores_and_documents[:top_k], logits_dim
+        )
 
     def _add_scores_to_documents(
         self, sorted_scores_and_documents: List[Tuple[Any, Document]], logits_dim: int
@@ -248,9 +247,7 @@ class SentenceTransformersRanker(BaseRanker):
 
             # is this step needed?
             sorted_documents = [(score, doc) for score, doc in sorted_scores_and_documents if isinstance(doc, Document)]
-            sorted_documents_with_scores = self._add_scores_to_documents(sorted_documents[:top_k], logits_dim)
-
-            return sorted_documents_with_scores
+            return self._add_scores_to_documents(sorted_documents[:top_k], logits_dim)
         else:
             # Group predictions together
             grouped_predictions = []
@@ -302,7 +299,7 @@ class SentenceTransformersRanker(BaseRanker):
         # If queries contains a single query, apply it to each list of Documents
         if len(documents) > 0 and isinstance(documents[0], list):
             if len(queries) == 1:
-                queries = queries * len(documents)
+                queries *= len(documents)
             if len(queries) != len(documents):
                 raise HaystackError("Number of queries must be equal to number of provided Document lists.")
             for query, cur_docs in zip(queries, documents):

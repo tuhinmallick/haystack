@@ -536,13 +536,12 @@ class PromptTemplate(BasePromptTemplate, ABC):
         :param kwargs: Keyword arguments to use for post-processing the prompt output.
         :return: A dictionary with the post-processed output.
         """
-        if self.output_parser:
-            invocation_context = kwargs
-            invocation_context["results"] = prompt_output
-            self.output_parser.run(invocation_context=invocation_context)
-            return invocation_context[self.output_parser.outputs[0]]
-        else:
+        if not self.output_parser:
             return prompt_output
+        invocation_context = kwargs
+        invocation_context["results"] = prompt_output
+        self.output_parser.run(invocation_context=invocation_context)
+        return invocation_context[self.output_parser.outputs[0]]
 
     def fill(self, *args, **kwargs) -> Iterator[str]:
         """
@@ -573,10 +572,11 @@ class PromptTemplate(BasePromptTemplate, ABC):
 
         for prompt_context_values in zip(*prompt_context_copy.values()):
             template_input = {key: prompt_context_values[idx] for idx, key in enumerate(prompt_context_copy.keys())}
-            prompt_prepared: str = eval(  # pylint: disable=eval-used
-                compile(self._ast_expression, filename="<string>", mode="eval"), self.globals, template_input
+            yield eval(  # pylint: disable=eval-used
+                compile(self._ast_expression, filename="<string>", mode="eval"),
+                self.globals,
+                template_input,
             )
-            yield prompt_prepared
 
     def remove_template_params(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """

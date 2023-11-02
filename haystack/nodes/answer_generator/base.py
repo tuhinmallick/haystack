@@ -117,22 +117,23 @@ class BaseGenerator(BaseComponent):
         self, generated_answers: List[str], documents: List[Document], prompt: Optional[str] = None
     ) -> List[Answer]:
         flat_docs_dict = self._flatten_docs(documents)
-        answers: List[Any] = []
-        for generated_answer in generated_answers:
-            answers.append(
-                Answer(
-                    answer=generated_answer,
-                    document_ids=flat_docs_dict.get("id"),
-                    type="generative",
-                    meta={
-                        "doc_scores": flat_docs_dict.get("score"),
-                        "content": flat_docs_dict.get("content"),
-                        "titles": [d.get("name", "") for d in flat_docs_dict.get("meta", [])],
-                        "doc_metas": flat_docs_dict.get("meta"),
-                        "prompt": prompt,
-                    },
-                )
+        answers: List[Any] = [
+            Answer(
+                answer=generated_answer,
+                document_ids=flat_docs_dict.get("id"),
+                type="generative",
+                meta={
+                    "doc_scores": flat_docs_dict.get("score"),
+                    "content": flat_docs_dict.get("content"),
+                    "titles": [
+                        d.get("name", "") for d in flat_docs_dict.get("meta", [])
+                    ],
+                    "doc_metas": flat_docs_dict.get("meta"),
+                    "prompt": prompt,
+                },
             )
+            for generated_answer in generated_answers
+        ]
         return answers
 
     def predict_batch(
@@ -198,11 +199,9 @@ class BaseGenerator(BaseComponent):
                     pb.update(1)
             pb.close()
 
-        # Docs case 2: list of lists of Documents -> apply each query to corresponding list of Documents, if queries
-        # contains only one query, apply it to each list of Documents
         elif len(documents) > 0 and isinstance(documents[0], list):
             if len(queries) == 1:
-                queries = queries * len(documents)
+                queries *= len(documents)
             if len(queries) != len(documents):
                 raise HaystackError("Number of queries must be equal to number of provided Document lists.")
             pb = tqdm(total=min(len(queries), len(documents)), disable=not self.progress_bar, desc="Generating answers")
@@ -216,7 +215,7 @@ class BaseGenerator(BaseComponent):
 
         # Group answers by question in case of multiple queries and single doc list
         if single_doc_list and len(queries) > 1:
-            answers_per_query = int(len(results["answers"]) / len(queries))
+            answers_per_query = len(results["answers"]) // len(queries)
             answers = []
             for i in range(0, len(results["answers"]), answers_per_query):
                 answer_group = results["answers"][i : i + answers_per_query]

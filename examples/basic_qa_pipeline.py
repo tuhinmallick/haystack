@@ -24,7 +24,7 @@ def basic_qa_pipeline():
     s3_url = "https://core-engineering.s3.eu-central-1.amazonaws.com/public/scripts/wiki_gameofthrones_txt1.zip"
     fetch_archive_from_http(url=s3_url, output_dir=doc_dir)
 
-    file_paths = [p for p in Path(doc_dir).glob("**/*")]
+    file_paths = list(Path(doc_dir).glob("**/*"))
     files_metadata = [{"name": path.name} for path in file_paths]
 
     # Indexing Pipeline

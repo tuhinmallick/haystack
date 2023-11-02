@@ -74,7 +74,10 @@ def test_dpr_modules():
     assert type(passage_language_model) == DPREncoder
 
     # check embedding layer weights
-    assert list(model.named_parameters())[0][1][0, 0].item() - -0.010200000368058681 < 0.0001
+    assert (
+        list(model.named_parameters())[0][1][0, 0].item()
+        > -0.010100000368058682
+    )
 
     d = {
         "query": "big little lies season 2 how many episodes",
@@ -179,7 +182,7 @@ def test_dpr_modules():
     assert torch.all(
         torch.le(similarity_scores - torch.tensor([[-1.8311e-03, -6.3016e00]]), torch.ones((1, 2)) * 0.0001)
     )
-    assert (loss[0].item() - 0.0018) <= 0.0001
+    assert loss[0].item() <= 0.0019
 
 
 query_input_ids = [
@@ -732,8 +735,8 @@ def test_dpr_processor_save_load_non_bert_tokenizer(tmp_path: Path, query_and_pa
     query_encoder_dir = "query_encoder"
     passage_encoder_dir = "passage_encoder"
     model.save(Path(save_dir), lm1_name=query_encoder_dir, lm2_name=passage_encoder_dir)
-    query_tokenizer.save_pretrained(save_dir + f"/{query_encoder_dir}")
-    passage_tokenizer.save_pretrained(save_dir + f"/{passage_encoder_dir}")
+    query_tokenizer.save_pretrained(f"{save_dir}/{query_encoder_dir}")
+    passage_tokenizer.save_pretrained(f"{save_dir}/{passage_encoder_dir}")
 
     # load model from disk
     loaded_query_tokenizer = AutoTokenizer.from_pretrained(
@@ -864,8 +867,8 @@ def test_dpr_processor_save_load_non_bert_tokenizer(tmp_path: Path, query_and_pa
     query_encoder_dir = "query_encoder"
     passage_encoder_dir = "passage_encoder"
     loaded_model.save(Path(save_dir), lm1_name=query_encoder_dir, lm2_name=passage_encoder_dir)
-    loaded_query_tokenizer.save_pretrained(save_dir + f"/{query_encoder_dir}")
-    loaded_passage_tokenizer.save_pretrained(save_dir + f"/{passage_encoder_dir}")
+    loaded_query_tokenizer.save_pretrained(f"{save_dir}/{query_encoder_dir}")
+    loaded_passage_tokenizer.save_pretrained(f"{save_dir}/{passage_encoder_dir}")
 
     # load model from disk
     query_tokenizer = AutoTokenizer.from_pretrained(

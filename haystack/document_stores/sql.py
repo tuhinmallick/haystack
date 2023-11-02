@@ -42,9 +42,7 @@ with LazyImport(message="Run 'pip install farm-haystack[sql]'") as sqlalchemy_im
             return json.dumps(value)
 
         def process_result_value(self, value, dialect):
-            if value is not None:
-                return json.loads(value)
-            return value
+            return json.loads(value) if value is not None else value
 
     class ORMBase(Base):
         __abstract__ = True
@@ -181,8 +179,7 @@ class SQLDocumentStore(BaseDocumentStore):
             raise NotImplementedError("SQLDocumentStore does not support headers.")
 
         documents = self.get_documents_by_id([id], index)
-        document = documents[0] if documents else None
-        return document
+        return documents[0] if documents else None
 
     def get_documents_by_id(
         self,
@@ -202,9 +199,7 @@ class SQLDocumentStore(BaseDocumentStore):
             query = self.session.query(DocumentORM).filter(
                 DocumentORM.id.in_(ids[i : i + batch_size]), DocumentORM.index == index
             )
-            for row in query.all():
-                documents.append(self._convert_sql_row_to_document(row))
-
+            documents.extend(self._convert_sql_row_to_document(row) for row in query.all())
         return documents
 
     def get_documents_by_vector_ids(self, vector_ids: List[str], index: Optional[str] = None, batch_size: int = 10_000):
@@ -216,11 +211,10 @@ class SQLDocumentStore(BaseDocumentStore):
             query = self.session.query(DocumentORM).filter(
                 DocumentORM.vector_id.in_(vector_ids[i : i + batch_size]), DocumentORM.index == index
             )
-            for row in query.all():
-                documents.append(self._convert_sql_row_to_document(row))
-
-        sorted_documents = sorted(documents, key=lambda doc: vector_ids.index(doc.meta["vector_id"]))
-        return sorted_documents
+            documents.extend(self._convert_sql_row_to_document(row) for row in query.all())
+        return sorted(
+            documents, key=lambda doc: vector_ids.index(doc.meta["vector_id"])
+        )
 
     def get_all_documents(
         self,
@@ -233,12 +227,14 @@ class SQLDocumentStore(BaseDocumentStore):
         if headers:
             raise NotImplementedError("SQLDocumentStore does not support headers.")
 
-        documents = list(
+        return list(
             self.get_all_documents_generator(
-                index=index, filters=filters, return_embedding=return_embedding, batch_size=batch_size
+                index=index,
+                filters=filters,
+                return_embedding=return_embedding,
+                batch_size=batch_size,
             )
         )
-        return documents
 
     def get_all_documents_generator(
         self,
@@ -265,8 +261,7 @@ class SQLDocumentStore(BaseDocumentStore):
 
         if return_embedding is True:
             raise Exception("return_embeddings is not supported by SQLDocumentStore.")
-        result = self._query(index=index, filters=filters, batch_size=batch_size)
-        yield from result
+        yield from self._query(index=index, filters=filters, batch_size=batch_size)
 
     def _create_document_field_map(self) -> Dict:
         """
@@ -354,9 +349,7 @@ class SQLDocumentStore(BaseDocumentStore):
         index = index or self.label_index
         # TODO: Use batch_size
         label_rows = self.session.query(LabelORM).filter_by(index=index).all()
-        labels = [self._convert_sql_row_to_label(row) for row in label_rows]
-
-        return labels
+        return [self._convert_sql_row_to_label(row) for row in label_rows]
 
     def write_documents(
         self,
@@ -443,7 +436,7 @@ class SQLDocumentStore(BaseDocumentStore):
         index = index or self.label_index
 
         duplicate_ids: list = [label.id for label in self._get_duplicate_labels(labels, index=index)]
-        if len(duplicate_ids) > 0:
+        if duplicate_ids:
             logger.warning(
                 "Duplicate Label IDs: Inserting a Label whose id already exists in this document store."
                 " This will overwrite the old Label. Please make sure Label.id is a unique identifier of"
@@ -596,7 +589,7 @@ class SQLDocumentStore(BaseDocumentStore):
         if answer is not None:
             answer = Answer.from_json(answer)
 
-        label = Label(
+        return Label(
             query=row.query,
             answer=answer,
             document=Document.from_json(row.document),
@@ -609,7 +602,6 @@ class SQLDocumentStore(BaseDocumentStore):
             updated_at=str(row.updated_at),
             meta=row.meta,
         )
-        return label
 
     def query_by_embedding(
         self,
@@ -740,13 +732,11 @@ class SQLDocumentStore(BaseDocumentStore):
 
     def _get_or_create(self, session, model, **kwargs):
         instance = session.query(model).filter_by(**kwargs).first()
-        if instance:
-            return instance
-        else:
+        if not instance:
             instance = model(**kwargs)
             session.add(instance)
             session.commit()
-            return instance
+        return instance
 
     def chunked_dict(self, dictionary, size):
         it = iter(dictionary)
@@ -777,18 +767,14 @@ class SQLDocumentStore(BaseDocumentStore):
 
         while intervals:
             start = intervals.pop(0)
-            if intervals:
-                end = intervals[0]
-            else:
-                end = None
+            end = intervals[0] if intervals else None
             yield int_for_range(start, end)
 
     def _windowed_query(self, q, column, windowsize):
         """ "Break a Query into windows on a given column."""
 
         for whereclause in self._column_windows(q.session, column, windowsize):
-            for row in q.filter(whereclause).order_by(column):
-                yield row
+            yield from q.filter(whereclause).order_by(column)
 
     def _flatten_classification_meta_fields(self, meta_fields: dict) -> dict:
         """

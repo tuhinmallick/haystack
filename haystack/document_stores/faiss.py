@@ -114,7 +114,7 @@ class FAISSDocumentStore(SQLDocumentStore):
             self.__class__.__init__(self, **init_params)  # pylint: disable=non-parent-init-called
             return
 
-        if similarity in ("dot_product", "cosine"):
+        if similarity in {"dot_product", "cosine"}:
             self.similarity = similarity
             self.metric_type = faiss.METRIC_INNER_PRODUCT
         elif similarity == "l2":
@@ -164,13 +164,11 @@ class FAISSDocumentStore(SQLDocumentStore):
 
     def _validate_params_load_from_disk(self, sig: Signature, locals: dict):
         allowed_params = ["faiss_index_path", "faiss_config_path", "self"]
-        invalid_param_set = False
-
-        for param in sig.parameters.values():
-            if param.name not in allowed_params and param.default != locals[param.name]:
-                invalid_param_set = True
-                break
-
+        invalid_param_set = any(
+            param.name not in allowed_params
+            and param.default != locals[param.name]
+            for param in sig.parameters.values()
+        )
         if invalid_param_set:
             raise ValueError("If faiss_index_path is passed, no other params besides faiss_config_path are allowed.")
 
@@ -178,7 +176,7 @@ class FAISSDocumentStore(SQLDocumentStore):
         # This check ensures the correct document database was loaded.
         # If it fails, make sure you provided the path to the database
         # used when creating the original FAISS index
-        if not self.get_document_count() == self.get_embedding_count():
+        if self.get_document_count() != self.get_embedding_count():
             raise ValueError(
                 f"The number of documents in the SQL database ({self.get_document_count()}) doesn't "
                 f"match the number of embeddings in FAISS ({self.get_embedding_count()}). Make sure your FAISS "
@@ -343,22 +341,18 @@ class FAISSDocumentStore(SQLDocumentStore):
         """
         index = index or self.index
 
-        if update_existing_embeddings is True:
-            if filters is None:
-                self.faiss_indexes[index].reset()
-                self.reset_vector_ids(index)
-            else:
+        if update_existing_embeddings:
+            if filters is not None:
                 raise Exception("update_existing_embeddings=True is not supported with filters.")
 
+            self.faiss_indexes[index].reset()
+            self.reset_vector_ids(index)
         if not self.faiss_indexes.get(index):
             raise ValueError("Couldn't find a FAISS index. Try to init the FAISSDocumentStore() again ...")
 
         if not self.faiss_indexes[index].is_trained:
             raise ValueError(
-                "FAISS index of type {} must be trained before adding vectors. Call `train_index()` "
-                "method before adding the vectors. For details, refer to the documentation: "
-                "[FAISSDocumentStore API](https://docs.haystack.deepset.ai/reference/document-store-api#faissdocumentstoretrain_index)."
-                "".format(self.faiss_index_factory_str)
+                f"FAISS index of type {self.faiss_index_factory_str} must be trained before adding vectors. Call `train_index()` method before adding the vectors. For details, refer to the documentation: [FAISSDocumentStore API](https://docs.haystack.deepset.ai/reference/document-store-api#faissdocumentstoretrain_index)."
             )
 
         document_count = self.get_document_count(index=index)
@@ -413,8 +407,7 @@ class FAISSDocumentStore(SQLDocumentStore):
         result = self.get_all_documents_generator(
             index=index, filters=filters, return_embedding=return_embedding, batch_size=batch_size
         )
-        documents = list(result)
-        return documents
+        return list(result)
 
     def get_all_documents_generator(
         self,
@@ -555,9 +548,7 @@ class FAISSDocumentStore(SQLDocumentStore):
 
         index = index or self.index
         if index in self.faiss_indexes.keys():
-            if not filters and not ids:
-                self.faiss_indexes[index].reset()
-            else:
+            if filters or ids:
                 affected_docs = self.get_all_documents(filters=filters)
                 if ids:
                     affected_docs = [doc for doc in affected_docs if doc.id in ids]
@@ -568,6 +559,8 @@ class FAISSDocumentStore(SQLDocumentStore):
                 ]
                 self.faiss_indexes[index].remove_ids(np.array(doc_ids, dtype="int64"))
 
+            else:
+                self.faiss_indexes[index].reset()
         super().delete_documents(index=index, ids=ids, filters=filters)
 
     def delete_index(self, index: str):

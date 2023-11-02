@@ -280,10 +280,10 @@ def join_documents_to_string(
     ) == "[1] fiRst - [2] second - [3] thiRd"
     ```
     """
-    content = delimiter.join(
-        format_document(doc, pattern, str_replace, idx=idx) for idx, doc in enumerate(documents, start=1)
+    return delimiter.join(
+        format_document(doc, pattern, str_replace, idx=idx)
+        for idx, doc in enumerate(documents, start=1)
     )
-    return content
 
 
 def strings_to_answers(
@@ -429,8 +429,7 @@ def string_to_answer(
         raise ValueError(f"Invalid document_id_mode: {reference_mode}")
 
     if pattern:
-        match = re.search(pattern, string)
-        if match:
+        if match := re.search(pattern, string):
             if not match.lastindex:
                 # no group in pattern -> take the whole match
                 string = match.group(0)
@@ -443,8 +442,12 @@ def string_to_answer(
         else:
             string = ""
     document_ids = parse_references(string=string, reference_pattern=reference_pattern, candidates=candidates)
-    answer = Answer(answer=string, type="generative", document_ids=document_ids, meta={"prompt": prompt})
-    return answer
+    return Answer(
+        answer=string,
+        type="generative",
+        document_ids=document_ids,
+        meta={"prompt": prompt},
+    )
 
 
 def parse_references(
@@ -764,13 +767,13 @@ class Shaper(BaseComponent):
         input_values: Dict[str, Any] = {}
         for key, value in self.inputs.items():
             if isinstance(value, list):
-                input_values[key] = []
-                for v in value:
-                    if v in invocation_context.keys() and v is not None:
-                        input_values[key].append(invocation_context[v])
-            else:
-                if value in invocation_context.keys() and value is not None:
-                    input_values[key] = invocation_context[value]
+                input_values[key] = [
+                    invocation_context[v]
+                    for v in value
+                    if v in invocation_context.keys() and v is not None
+                ]
+            elif value in invocation_context.keys() and value is not None:
+                input_values[key] = invocation_context[value]
 
         # auto fill in input values if there's an invocation context value with the same name
         function_params = inspect.signature(self.function).parameters

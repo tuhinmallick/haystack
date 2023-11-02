@@ -32,11 +32,7 @@ class ConversationMemory(Memory):
         chat_transcript = ""
         window_size = kwargs.get("window_size", None)
 
-        if window_size is not None:
-            chat_list = self.list[-window_size:]  # pylint: disable=invalid-unary-operand-type
-        else:
-            chat_list = self.list
-
+        chat_list = self.list[-window_size:] if window_size is not None else self.list
         for chat_snippet in chat_list:
             chat_transcript += f"Human: {chat_snippet['Human']}\n"
             chat_transcript += f"AI: {chat_snippet['AI']}\n"

@@ -60,14 +60,13 @@ with LazyImport(message="Run 'pip install farm-haystack[inference]'") as torch_a
             special_tokens_mask = self.model_inputs["special_tokens_mask"][item]
             offset_mapping = self.model_inputs["offset_mapping"][item]
             overflow_to_sample_mapping = self.model_inputs["overflow_to_sample_mapping"][item]
-            single_input = {
+            return {
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
                 "special_tokens_mask": special_tokens_mask,
                 "offset_mapping": offset_mapping,
                 "overflow_to_sample_mapping": overflow_to_sample_mapping,
             }
-            return single_input
 
         def __len__(self):
             return self._len
@@ -226,13 +225,12 @@ class EntityExtractor(BaseComponent):
                 doc.meta.update(entity_lists)  # type: ignore
             else:
                 doc["meta"].update(entity_lists)  # type: ignore
+        elif is_doc:
+            doc.meta["entities"] = entities  # type: ignore
         else:
-            if is_doc:
-                doc.meta["entities"] = entities  # type: ignore
-            else:
-                doc["meta"]["entities"] = entities  # type: ignore
+            doc["meta"]["entities"] = entities  # type: ignore
 
-    def run(self, documents: Optional[Union[List[Document], List[dict]]] = None) -> Tuple[Dict, str]:  # type: ignore
+    def run(self, documents: Optional[Union[List[Document], List[dict]]] = None) -> Tuple[Dict, str]:    # type: ignore
         """
         This is the method called when this node is used in a pipeline
         """
@@ -240,11 +238,7 @@ class EntityExtractor(BaseComponent):
             is_doc = isinstance(documents[0], Document)
             for doc in tqdm(documents, disable=not self.progress_bar, desc="Extracting entities"):
                 # In a querying pipeline, doc is a haystack.schema.Document object
-                if is_doc:
-                    content = doc.content  # type: ignore
-                # In an indexing pipeline, doc is a dictionary
-                else:
-                    content = doc["content"]  # type: ignore
+                content = doc.content if is_doc else doc["content"]
                 entities = self.extract(content)
                 self._add_entities_to_doc(
                     doc, entities=entities, flatten_entities_in_meta_data=self.flatten_entities_in_meta_data
@@ -451,9 +445,7 @@ class EntityExtractor(BaseComponent):
         if isinstance(text, str):
             is_single_text = True
             text = [text]
-        elif isinstance(text, list) and isinstance(text[0], str):
-            pass
-        else:
+        elif not isinstance(text, list) or not isinstance(text[0], str):
             raise ValueError("The variable text must be a string, or a list of strings.")
 
         # Preprocess
@@ -478,10 +470,7 @@ class EntityExtractor(BaseComponent):
         # Postprocess
         predictions = self.postprocess(predictions)  # type: ignore
 
-        if is_single_text:
-            return predictions[0]  # type: ignore
-
-        return predictions
+        return predictions[0] if is_single_text else predictions
 
     def extract_batch(self, texts: Union[List[str], List[List[str]]], batch_size: int = 1) -> List[List[Dict]]:
         """
@@ -504,15 +493,14 @@ class EntityExtractor(BaseComponent):
 
         if single_list_of_texts:
             return entities  # type: ignore
-        else:
-            # Group entities together
-            grouped_entities = []
-            left_idx = 0
-            for number in number_of_texts:
-                right_idx = left_idx + number
-                grouped_entities.append(entities[left_idx:right_idx])
-                left_idx = right_idx
-            return grouped_entities
+        # Group entities together
+        grouped_entities = []
+        left_idx = 0
+        for number in number_of_texts:
+            right_idx = left_idx + number
+            grouped_entities.append(entities[left_idx:right_idx])
+            left_idx = right_idx
+        return grouped_entities
 
 
 def simplify_ner_for_qa(output):
@@ -536,14 +524,14 @@ def simplify_ner_for_qa(output):
     """
     compact_output = []
     for answer in output["answers"]:
-        entities = []
-        for entity in answer.meta["entities"]:
+        entities = [
+            entity["word"]
+            for entity in answer.meta["entities"]
             if (
                 entity["start"] >= answer.offsets_in_document[0].start
                 and entity["end"] <= answer.offsets_in_document[0].end
-            ):
-                entities.append(entity["word"])
-
+            )
+        ]
         compact_output.append({"answer": answer.answer, "entities": entities})
     return compact_output
 
@@ -607,13 +595,12 @@ class _EntityPostProcessor:
             sentence, input_ids, scores, updated_offset_mapping, special_tokens_mask, word_ids
         )
         grouped_entities = self.aggregate(pre_entities, aggregation_strategy, word_offset_mapping=word_offset_mapping)
-        # Filter anything that is in self.ignore_labels
-        entities = [
+        return [
             entity
             for entity in grouped_entities
-            if entity.get("entity", None) not in ignore_labels and entity.get("entity_group", None) not in ignore_labels
+            if entity.get("entity", None) not in ignore_labels
+            and entity.get("entity_group", None) not in ignore_labels
         ]
-        return entities
 
     def aggregate(
         self,
@@ -706,11 +693,7 @@ class _EntityPostProcessor:
 
             word = self.tokenizer.convert_ids_to_tokens(int(input_ids[token_idx]))
 
-            if current_word_id != previous_word_id:
-                is_subword = False
-            else:
-                is_subword = True
-
+            is_subword = current_word_id == previous_word_id
             start_ind, end_ind = offset_mapping[token_idx]
             if int(input_ids[token_idx]) == self.tokenizer.unk_token_id:
                 if isinstance(sentence, list):
@@ -761,7 +744,7 @@ class _EntityPostProcessor:
             score = average_scores[entity_idx]
         else:
             raise ValueError("Invalid aggregation_strategy")
-        new_entity = {
+        return {
             "entity": entity,
             "score": score,
             "word": word,
@@ -769,7 +752,6 @@ class _EntityPostProcessor:
             "start": int(entities[0]["start"]),
             "end": int(entities[-1]["end"]),
         }
-        return new_entity
 
     def aggregate_words(
         self, entities: List[Dict[str, Any]], aggregation_strategy: Literal[None, "simple", "first", "average", "max"]
@@ -815,14 +797,13 @@ class _EntityPostProcessor:
         except KeyError:
             tokens = [entity["word"] for entity in entities]
 
-        entity_group = {
+        return {
             "entity_group": entity,
             "score": np.mean(scores),
             "word": self.tokenizer.convert_tokens_to_string(tokens),
             "start": entities[0]["start"],
             "end": entities[-1]["end"],
         }
-        return entity_group
 
     @staticmethod
     def get_tag(entity_name: str) -> Tuple[str, str]:

@@ -52,9 +52,7 @@ class ChatGPTInvocationLayer(OpenAIInvocationLayer):
 
     def _extract_token(self, event_data: Dict[str, Any]):
         delta = event_data["choices"][0]["delta"]
-        if "content" in delta:
-            return delta["content"]
-        return None
+        return delta["content"] if "content" in delta else None
 
     def _ensure_token_limit(self, prompt: Union[str, List[Dict[str, str]]]) -> Union[str, List[Dict[str, str]]]:
         """Make sure the length of the prompt and answer is within the max tokens limit of the model.
@@ -72,24 +70,7 @@ class ChatGPTInvocationLayer(OpenAIInvocationLayer):
         if (n_message_tokens + n_answer_tokens) <= self.max_tokens_limit:
             return prompt
 
-        if isinstance(prompt, str):
-            tokenized_prompt = self._tokenizer.encode(prompt)
-            n_other_tokens = n_message_tokens - len(tokenized_prompt)
-            truncated_prompt_length = self.max_tokens_limit - n_answer_tokens - n_other_tokens
-
-            logger.warning(
-                "The prompt has been truncated from %s tokens to %s tokens so that the prompt length and "
-                "answer length (%s tokens) fit within the max token limit (%s tokens). "
-                "Reduce the length of the prompt to prevent it from being cut off.",
-                len(tokenized_prompt),
-                truncated_prompt_length,
-                n_answer_tokens,
-                self.max_tokens_limit,
-            )
-
-            truncated_prompt = self._tokenizer.decode(tokenized_prompt[:truncated_prompt_length])
-            return truncated_prompt
-        else:
+        if not isinstance(prompt, str):
             # TODO: support truncation when there is a chat history
             raise ValueError(
                 f"The prompt or the messages are too long ({n_message_tokens} tokens). "
@@ -97,6 +78,21 @@ class ChatGPTInvocationLayer(OpenAIInvocationLayer):
                 f"token limit ({self.max_tokens_limit} tokens). "
                 f"Reduce the length of the prompt or messages."
             )
+        tokenized_prompt = self._tokenizer.encode(prompt)
+        n_other_tokens = n_message_tokens - len(tokenized_prompt)
+        truncated_prompt_length = self.max_tokens_limit - n_answer_tokens - n_other_tokens
+
+        logger.warning(
+            "The prompt has been truncated from %s tokens to %s tokens so that the prompt length and "
+            "answer length (%s tokens) fit within the max token limit (%s tokens). "
+            "Reduce the length of the prompt to prevent it from being cut off.",
+            len(tokenized_prompt),
+            truncated_prompt_length,
+            n_answer_tokens,
+            self.max_tokens_limit,
+        )
+
+        return self._tokenizer.decode(tokenized_prompt[:truncated_prompt_length])
 
     @property
     def url(self) -> str:
@@ -106,7 +102,7 @@ class ChatGPTInvocationLayer(OpenAIInvocationLayer):
     def supports(cls, model_name_or_path: str, **kwargs) -> bool:
         valid_model = (
             any(m for m in ["gpt-3.5-turbo", "gpt-4"] if m in model_name_or_path)
-            and not "gpt-3.5-turbo-instruct" in model_name_or_path
+            and "gpt-3.5-turbo-instruct" not in model_name_or_path
         )
         return valid_model and not has_azure_parameters(**kwargs)
 

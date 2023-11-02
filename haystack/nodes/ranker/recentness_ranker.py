@@ -119,9 +119,7 @@ class RecentnessRanker(BaseRanker):
                     warnings.warn("The score was not provided; defaulting to 0")
                 elif doc.score < 0 or doc.score > 1:
                     warnings.warn(
-                        "The score {} for document {} is outside the [0,1] range; defaulting to 0".format(
-                            doc.score, doc.id
-                        )
+                        f"The score {doc.score} for document {doc.id} is outside the [0,1] range; defaulting to 0"
                     )
                 else:
                     score = doc.score

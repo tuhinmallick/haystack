@@ -154,8 +154,7 @@ class SageMakerHFInferenceInvocationLayer(SageMakerBaseInvocationLayer):
 
         stream = kwargs.get("stream", self.stream)
         stream_handler = kwargs.get("stream_handler", self.stream_handler)
-        streaming_requested = stream or stream_handler is not None
-        if streaming_requested:
+        if streaming_requested := stream or stream_handler is not None:
             raise SageMakerConfigurationError("SageMaker model response streaming is not supported yet")
 
         stop_words = kwargs.pop("stop_words", None)  # doesn't tolerate empty list
@@ -186,8 +185,7 @@ class SageMakerHFInferenceInvocationLayer(SageMakerBaseInvocationLayer):
             for param, default in default_params.items()
             if param in kwargs_with_defaults or default is not None
         }
-        generated_texts = self._post(prompt=prompt, params=params)
-        return generated_texts
+        return self._post(prompt=prompt, params=params)
 
     def _post(self, prompt: str, params: Optional[Dict[str, Any]] = None) -> List[str]:
         """
@@ -226,8 +224,7 @@ class SageMakerHFInferenceInvocationLayer(SageMakerBaseInvocationLayer):
         generated_texts = []
         for response in self._unwrap_response(json_response):
             for key in ["generated_texts", "generated_text"]:
-                raw_response = response.get(key)
-                if raw_response:
+                if raw_response := response.get(key):
                     if isinstance(raw_response, list):
                         generated_texts.extend(raw_response)
                     else:

@@ -68,7 +68,7 @@ if test:
 else:
     while True:
         user_input = input("\nAsk question (type 'exit' or 'quit' to quit): ")
-        if user_input.lower() == "exit" or user_input.lower() == "quit":
+        if user_input.lower() in ["exit", "quit"]:
             break
         if stream:
             print("Answer:")

@@ -17,8 +17,7 @@ def docstrings_checksum(python_files: Iterator[Path]):
             if not isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef, ast.ClassDef, ast.Module)):
                 # Skip all node types that can't have docstrings to prevent failures
                 continue
-            docstring = ast.get_docstring(node)
-            if docstring:
+            if docstring := ast.get_docstring(node):
                 docstrings.append(docstring)
 
     # Sort them to be safe, since ast.walk() returns

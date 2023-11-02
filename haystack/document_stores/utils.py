@@ -49,7 +49,7 @@ def eval_data_from_json(
             docs.extend(cur_docs)
             labels.extend(cur_labels)
             problematic_ids.extend(cur_problematic_ids)
-    if len(problematic_ids) > 0:
+    if problematic_ids:
         logger.warning(
             "Could not convert an answer for %s questions.\nThere were conversion errors for question ids: %s",
             len(problematic_ids),
@@ -192,7 +192,6 @@ def _extract_docs_and_labels_from_dict(
                             is_correct_document=True,
                             origin="gold-label",
                         )
-                        labels.append(label)
                     else:
                         ans_position = cur_full_doc.content[
                             answer["answer_start"] : answer["answer_start"] + len(str(ans))
@@ -235,7 +234,7 @@ def _extract_docs_and_labels_from_dict(
                             is_correct_document=True,
                             origin="gold-label",
                         )
-                        labels.append(label)
+                    labels.append(label)
             else:
                 # for no_answer we need to assign each split as not fitting to the question
                 for s in splits:
@@ -271,9 +270,8 @@ def convert_date_to_rfc3339(date: str) -> str:
     and filter_utils.py.
     """
     parsed_datetime = datetime.fromisoformat(date)
-    if parsed_datetime.utcoffset() is None:
-        converted_date = parsed_datetime.isoformat() + "Z"
-    else:
-        converted_date = parsed_datetime.isoformat()
-
-    return converted_date
+    return (
+        f"{parsed_datetime.isoformat()}Z"
+        if parsed_datetime.utcoffset() is None
+        else parsed_datetime.isoformat()
+    )

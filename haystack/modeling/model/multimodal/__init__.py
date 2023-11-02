@@ -27,7 +27,7 @@ HUGGINGFACE_CAPITALIZE = {
     "big-bird": "BigBird",
     "deberta-v2": "DebertaV2",
     "xlm-roberta": "XLMRoberta",
-    **{k.lower(): k for k in HUGGINGFACE_TO_HAYSTACK.keys()},
+    **{k.lower(): k for k in HUGGINGFACE_TO_HAYSTACK},
 }
 
 
@@ -75,9 +75,7 @@ def get_model(
     model_wrapper_class: Type[HaystackModel]
 
     # Prepare the kwargs the model wrapper expects (see each wrapper's init for details)
-    wrapper_kwarg_groups = {}
-    wrapper_kwarg_groups["model_kwargs"] = model_kwargs
-
+    wrapper_kwarg_groups = {"model_kwargs": model_kwargs}
     # SentenceTransformers are much faster, so use them whenever possible
     if _is_sentence_transformers_model(
         pretrained_model_name_or_path, use_auth_token=autoconfig_kwargs.get("use_auth_token", False)

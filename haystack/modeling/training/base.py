@@ -96,24 +96,23 @@ class Trainer:
         :param disable_tqdm: Disable tqdm progress bar (helps to reduce verbosity in some environments)
         :param max_grad_norm: Max gradient norm for clipping, default 1.0, set to None to disable
         """
-        amp_mapping = {"O0": False, "O1": True, "O2": True, "O3": True}
         self.model = model
         self.data_silo = data_silo
-        self.epochs = int(epochs)
+        self.epochs = epochs
         if isinstance(use_amp, str):
-            if use_amp in amp_mapping:
-                logger.warning(
-                    "The Trainer only supports native PyTorch automatic mixed precision and no longer supports the Apex library.\n"
-                    "Because you provided Apex optimization level %s, automatic mixed precision was set to %s.\n"
-                    "In the future, set `use_amp=True` to turn on automatic mixed precision.",
-                    use_amp,
-                    amp_mapping[use_amp],
-                )
-                use_amp = amp_mapping[use_amp]
-            else:
+            amp_mapping = {"O0": False, "O1": True, "O2": True, "O3": True}
+            if use_amp not in amp_mapping:
                 raise Exception(
                     f"use_amp value {use_amp} is not supported. Please provide use_amp=True to turn on automatic mixed precision."
                 )
+            logger.warning(
+                "The Trainer only supports native PyTorch automatic mixed precision and no longer supports the Apex library.\n"
+                "Because you provided Apex optimization level %s, automatic mixed precision was set to %s.\n"
+                "In the future, set `use_amp=True` to turn on automatic mixed precision.",
+                use_amp,
+                amp_mapping[use_amp],
+            )
+            use_amp = amp_mapping[use_amp]
         self.use_amp = use_amp
         self.optimizer = optimizer
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
@@ -134,10 +133,7 @@ class Trainer:
         self.test_result = None
 
         self.checkpoint_on_sigterm = checkpoint_on_sigterm
-        if checkpoint_on_sigterm:
-            self.sigterm_handler = GracefulKiller()  # type: Optional[GracefulKiller]
-        else:
-            self.sigterm_handler = None
+        self.sigterm_handler = GracefulKiller() if checkpoint_on_sigterm else None
         self.checkpoint_root_dir = checkpoint_root_dir
         self.checkpoints_to_keep = checkpoints_to_keep
         self.checkpoint_every = checkpoint_every
@@ -199,12 +195,11 @@ class Trainer:
                 if resume_from_step and step <= resume_from_step:
                     if step % 10000 == 0:
                         logger.info("Skipping %s out of %s steps ...", step, resume_from_step)
-                    if resume_from_step == step:
-                        logger.info("Finished skipping %s steps ...", resume_from_step)
-                        resume_from_step = None
-                    else:
+                    if resume_from_step != step:
                         continue
 
+                    logger.info("Finished skipping %s steps ...", resume_from_step)
+                    resume_from_step = None
                 progress_bar.set_description(f"Train epoch {epoch}/{self.epochs-1} (Cur. train loss: {loss:.4f})")
 
                 # Only for distributed training: we need to ensure that all ranks still have a batch left for training
@@ -323,7 +318,10 @@ class Trainer:
         return self.backward_propagate(loss, step)
 
     def backward_propagate(self, loss: torch.Tensor, step: int):
-        if self.global_step % self.log_loss_every == 0 and self.local_rank in [-1, 0] and self.local_rank in [-1, 0]:
+        if self.global_step % self.log_loss_every == 0 and self.local_rank in [
+            -1,
+            0,
+        ]:
             tracker.track_metrics({"Train_loss_total": float(loss.detach().cpu().numpy())}, step=self.global_step)
             if self.log_learning_rate:
                 tracker.track_metrics({"learning_rate": self.lr_schedule.get_last_lr()[0]}, step=self.global_step)
@@ -374,11 +372,15 @@ class Trainer:
         checkpoint_to_load = None
         if checkpoint_root_dir and checkpoint_root_dir.exists():
             if resume_from_checkpoint == "latest":
-                saved_checkpoints = cls._get_checkpoints(checkpoint_root_dir)
-                if saved_checkpoints:
-                    checkpoint_to_load = saved_checkpoints[0]  # latest checkpoint
-                else:
-                    checkpoint_to_load = None
+                checkpoint_to_load = (
+                    saved_checkpoints[0]
+                    if (
+                        saved_checkpoints := cls._get_checkpoints(
+                            checkpoint_root_dir
+                        )
+                    )
+                    else None
+                )
             else:
                 checkpoint_to_load = checkpoint_root_dir / resume_from_checkpoint
 
@@ -467,9 +469,7 @@ class Trainer:
         sorted_checkpoints_with_epoch_and_step = sorted(
             checkpoints_with_epoch_and_step, key=lambda tup: (tup[1], tup[2]), reverse=True  # sort by epoch and step
         )
-        sorted_checkpoints = [tup[0] for tup in sorted_checkpoints_with_epoch_and_step]
-
-        return sorted_checkpoints
+        return [tup[0] for tup in sorted_checkpoints_with_epoch_and_step]
 
     def _save(self):
         """
@@ -523,7 +523,7 @@ class Trainer:
         """
         Serializable state dictionary of a Trainer object
         """
-        state_dict = {
+        return {
             "evaluate_every": self.evaluate_every,
             "n_gpu": self.n_gpu,
             "grad_acc_steps": self.grad_acc_steps,
@@ -544,8 +544,6 @@ class Trainer:
             "use_amp": self.use_amp,
         }
 
-        return state_dict
-
     def _all_ranks_have_data(self, has_data: bool, step: Optional[int] = None):
         """
         Verify in distributed training if all ranks still have data left. We send a "1" from here if this rank has data
@@ -563,18 +561,17 @@ class Trainer:
 
         torch.distributed.all_reduce(ranks_with_data, op=torch.distributed.ReduceOp.SUM)
 
-        if ranks_with_data < torch.distributed.get_world_size():
-            if step is not None:
-                logger.info(
-                    "Stopping epoch %s at step %s for rank %s since at least one other rank "
-                    "(~ one GPU) in distributed training doesn't have any more batches... ",
-                    self.from_epoch,
-                    step,
-                    self.local_rank,
-                )
-            return False
-        else:
+        if ranks_with_data >= torch.distributed.get_world_size():
             return True
+        if step is not None:
+            logger.info(
+                "Stopping epoch %s at step %s for rank %s since at least one other rank "
+                "(~ one GPU) in distributed training doesn't have any more batches... ",
+                self.from_epoch,
+                step,
+                self.local_rank,
+            )
+        return False
 
 
 class DistillationTrainer(Trainer):

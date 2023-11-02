@@ -29,9 +29,9 @@ class DocumentMerger(BaseComponent):
         :param separator: The separator that appears between subsequent merged documents.
         :return: List of Documents
         """
-        if len(documents) == 0:
+        if not documents:
             raise ValueError("Document Merger needs at least one document to merge.")
-        if not all(doc.content_type == "text" for doc in documents):
+        if any(doc.content_type != "text" for doc in documents):
             raise ValueError(
                 "Some of the documents provided are non-textual. Document Merger only works on textual documents."
             )
@@ -71,17 +71,15 @@ class DocumentMerger(BaseComponent):
         merge_dictionary = deepcopy(list_of_dicts[0])
         for key, value in list_of_dicts[0].items():
             # if not all other dicts have this key, delete directly
-            if not all(key in dict.keys() for dict in list_of_dicts):
+            if any(key not in dict.keys() for dict in list_of_dicts):
                 del merge_dictionary[key]
 
-            # if they all have it and it's a dictionary, merge recursively
             elif isinstance(value, dict):
                 # Get all the subkeys to merge in a new list
                 list_of_subdicts = [dictionary[key] for dictionary in list_of_dicts]
                 merge_dictionary[key] = self._keep_common_keys(list_of_subdicts)
 
-            # If all dicts have this key and it's not a dictionary, delete only if the values differ
-            elif not all(value == dict[key] for dict in list_of_dicts):
+            elif any(value != dict[key] for dict in list_of_dicts):
                 del merge_dictionary[key]
 
         return merge_dictionary

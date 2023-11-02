@@ -59,7 +59,7 @@ class OpenAIInvocationLayer(PromptModelInvocationLayer):
         if set. If the input or answers are flagged, an empty list is returned in place of the answers.
         """
         super().__init__(model_name_or_path)
-        if not isinstance(api_key, str) or len(api_key) == 0:
+        if not isinstance(api_key, str) or not api_key:
             raise OpenAIError(
                 f"api_key {api_key} must be a valid OpenAI key. Visit https://openai.com/api/ to get one."
             )
@@ -233,8 +233,7 @@ class OpenAIInvocationLayer(PromptModelInvocationLayer):
             for event in client.events():
                 if event.data != TokenStreamingHandler.DONE_MARKER:
                     event_data = json.loads(event.data)
-                    token: str = self._extract_token(event_data)
-                    if token:
+                    if token := self._extract_token(event_data):
                         tokens.append(stream_handler(token, event_data=event_data["choices"]))
         finally:
             client.close()
@@ -265,12 +264,20 @@ class OpenAIInvocationLayer(PromptModelInvocationLayer):
         )
 
         tokenized_payload = self._tokenizer.encode(prompt)
-        decoded_string = self._tokenizer.decode(tokenized_payload[: self.max_tokens_limit - n_answer_tokens])
-        return decoded_string
+        return self._tokenizer.decode(
+            tokenized_payload[: self.max_tokens_limit - n_answer_tokens]
+        )
 
     @classmethod
     def supports(cls, model_name_or_path: str, **kwargs) -> bool:
-        valid_model = model_name_or_path in ["ada", "babbage", "davinci", "curie", "gpt-3.5-turbo-instruct"] or any(
-            m in model_name_or_path for m in ["-ada-", "-babbage-", "-davinci-", "-curie-"]
+        valid_model = model_name_or_path in {
+            "ada",
+            "babbage",
+            "davinci",
+            "curie",
+            "gpt-3.5-turbo-instruct",
+        } or any(
+            m in model_name_or_path
+            for m in ["-ada-", "-babbage-", "-davinci-", "-curie-"]
         )
         return valid_model and not has_azure_parameters(**kwargs)

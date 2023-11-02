@@ -208,7 +208,7 @@ class QuestionGenerator(BaseComponent):
 
         if isinstance(texts[0], str):
             single_doc_list = True
-            number_of_docs = [1 for text_list in texts]
+            number_of_docs = [1 for _ in texts]
             text_iterator = texts
         else:
             single_doc_list = False
